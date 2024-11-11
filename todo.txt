@@ -1,0 +1,35 @@
+//set up the server to detect the host name before it starts
+//add multiple servers to the directory server
+//remove servers.
+
+
+not yet done- freeing up memory in the directory server - check
+
+#working on right now
+#getting the chat to connect with the server
+#take input from the client about which client they want
+#the topic and port number, I think the port number is the important thing here.
+#allow the user to type in the topicName
+#create a new socket to bind to 
+#witht the local port and ip
+#handle blocking on read.
+#close the socket and remove from 
+
+
+#check that name lengths are correctly assessed, and memset is called.
+#try disconnecting chatServers, and reconnecting them.
+#freeing up memory where necessary
+#making sure pointers are not null
+#clearong the buffer.
+#verify topic lengths
+De regiester a topic when the server leaves
+#add the instructions to the readme
+#fix the invalid portnumber thing
+
+#directory server
+#how to detect chars after the integer? 
+what if someone inputs invalid data. like ffddff
+//if there is still input in the buffr
+//specify how many servers may connect?
+//the tab s causing problems.
+//add that there are no servers to connect to .

@@ -1,0 +1,23 @@
+
+1. Copy the files to your own directory.
+
+2. Modify inet.h to reflect the host you are currently logged into.
+   Also, modify the port numbers to be used to reduce the likelihood
+   of conflicting with another server.
+
+3. Compile the source code using the command: make
+
+4. Start the directory server with ./directoryServer2
+
+5. Start up the servers with ./chatServer2 <topicName> <portNumber>  --port number must be between 40000 and 65535 non-inclusive
+
+6. start up a client with ./chatClient2 
+- select the chatServer you want to connect to by selecting the number corresponding with the chat server
+- enter in a username
+- send messages
+
+7. Remember to kill the server before logging off
+
+
+
+
