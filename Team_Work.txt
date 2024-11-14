@@ -1,0 +1,11 @@
+Team Breakdown:
+Sockets: Tatenda + Sophia
+Certificates: Lucas + Aidan
+
+Socket Team To Do:
+Convert sockets to TLS
+Convert sockets to nonblocking
+
+Certificates Team To Do:
+Generate certficates for server and directory
+Certificate verification
