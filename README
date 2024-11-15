@@ -7,11 +7,11 @@
 
 3. Compile the source code using the command: make
 
-4. Start the directory server with ./directoryServer2
+4. Start the directory server with ./directoryServer5
 
-5. Start up the servers with ./chatServer2 <topicName> <portNumber>  --port number must be between 40000 and 65535 non-inclusive
+5. Start up the servers with ./chatServer5 <topicName> <portNumber>   --port number must be between 40000 and 65535 non-inclusive
 
-6. start up a client with ./chatClient2 
+6. start up a client with ./chatClient5 
 - select the chatServer you want to connect to by selecting the number corresponding with the chat server
 - enter in a username
 - send messages
