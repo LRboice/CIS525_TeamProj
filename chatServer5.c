@@ -226,6 +226,7 @@ int main(int argc, char **argv)
         LIST_INSERT_HEAD(&head, newConnection, clients); //need to know that this won't have nickname set first time
         size++;
         newConnection->cliSSL = SSL_new(ctx);
+        //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
         SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
         if (SSL_accept(newConnection->cliSSL) == FAIL)
           ERR_print_errors_fp(stderr);
