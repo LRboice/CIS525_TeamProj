@@ -277,7 +277,7 @@ int main(int argc, char **argv)
     exit(0);
   }
   else {
-    fprintf(stderr, "Usage: <IP> <port> <expected_entity>\n");
+    fprintf(stderr, "Usage: <IP> <port> <chatroom name>\n");
     exit(1);
   }
 }
