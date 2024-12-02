@@ -6,6 +6,7 @@
 #include <string.h>
 #include "inet.h"
 #include "common.h"
+#include <openssl/ssl.h>
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -29,14 +30,21 @@ int main(int argc, char **argv)
   /************************************************************/
   SSL_METHOD *method;
   SSL_CTX *ctx;
-  OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */
+  //OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */ 
+  SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // allows only high-security ciphers, exlcuding ciphers without authentication and MD5
   SSL_load_error_strings();        /* Load/register error msg */
-  method = SSLv2_client_method(); /* Create new client-method */
-  ctx = SSL_CTX_new(method);            /* Create new context */
-
+  method = TLS_client_method(); /* Create new client-method */
+  
   // if return values of the API are null or zero display error message and exit
-  ERR_print_errors_fp(stderr);      /* Print errors to stderr */
-
+  if(method == NULL) {
+    ERR_print_errors_fp(stderr);
+    exit(2);
+  }
+  ctx = SSL_CTX_new(method);            /* Create new context */
+  if(ctx == NULL) {
+    ERR_print_errors_fp(stderr);
+    exit(2);
+  }
 	
 	if (argc == 1) { //handles initial call to directory
 
@@ -66,9 +74,34 @@ int main(int argc, char **argv)
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
     SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
-    if ( SSL_connect(ssl) == -1 ) {     /* perform the connection */
+    if (SSL_connect(ssl) <= 0 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
     }
+
+
+    /************************************************************/
+    /*** Checking certificates                                ***/
+    /************************************************************/
+    X509 *cert = SSL_get_peer_certificate(ssl);
+    if (cert != NULL) {
+      char actual[MAX];
+      X509_NAME *subject = X509_get_subject_name(cert);
+      X509_NAME_get_text_by_NID(subject, NID_commonName, actual, sizeof(actual));
+      const char *expected = "Directory Server"; 
+      if (strcmp(actual, expected) != 0) {
+          fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
+          X509_free(cert);
+          SSL_free(ssl);
+          close(sockfd);
+          exit(1);
+      }
+    } else {
+      printf("No certificates.\n");
+      SSL_free(ssl);
+      close(sockfd);
+      exit(1);
+    }
+
 
     snprintf(holder, MAX, "2");
     //write(sockfd, holder, MAX); 
@@ -103,7 +136,7 @@ int main(int argc, char **argv)
       exit(0);
     }
   } 
-  else if (argc == 3) { //handles connection to server
+  else if (argc == 4) { //handles connection to server Usage: <address> <port> <chatroom name>
     if (sscanf(argv[1], "%s", argvValOne) < 0) {
       perror("Unable to parse address.");
       exit(1);
@@ -150,10 +183,32 @@ int main(int argc, char **argv)
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
     SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
-    if ( SSL_connect(ssl) == -1 ) {     /* perform the connection */
+    if (SSL_connect(ssl) == -1 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
     }
 
+    /************************************************************/
+    /*** Checking certificates                                ***/
+    /************************************************************/
+    X509 *cert = SSL_get_peer_certificate(ssl);
+    if (cert != NULL && argv[3] != NULL) {
+      char actual[MAX];
+      X509_NAME *subject = X509_get_subject_name(cert);
+      X509_NAME_get_text_by_NID(subject, NID_commonName, actual, sizeof(actual));
+      const char *expected = arg[3]; 
+      if (strcmp(actual, expected) != 0) {
+          fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
+          X509_free(cert);
+          SSL_free(ssl);
+          close(sockfd);
+          exit(1);
+      }
+    } else {
+      printf("No certificates.\n");
+      SSL_free(ssl);
+      close(sockfd);
+      exit(1);
+    }
 
 	  for(;;) {
 
@@ -208,17 +263,21 @@ int main(int argc, char **argv)
 				  }
           else {
             fprintf(stdout, "Server closed\n");
+            SSL_free(ssl);
             close(sockfd);
+            SSL_CTX_free(ctx);
             exit(0);
           }
 			  }
 		  }
 	  }
+    SSL_free(ssl);
 	  close(sockfd);
+    SSL_CTX_free(ctx);
     exit(0);
   }
   else {
-    perror("Error: Invalid number of arguments.");
+    fprintf(stderr, "Usage: <IP> <port> <expected_entity>\n");
     exit(1);
   }
 }
