@@ -24,15 +24,32 @@ int main(int argc, char **argv)
   char        argvValOne[MAX];
   int         argvValTwo;
   
+  /************************************************************/
+  /*** Initialize Client SSL state (from Linux Socket Programming chapter 16)   ***/
+  /************************************************************/
+  SSL_METHOD *method;
+  SSL_CTX *ctx;
+  OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */
+  SSL_load_error_strings();        /* Load/register error msg */
+  method = SSLv2_client_method(); /* Create new client-method */
+  ctx = SSL_CTX_new(method);            /* Create new context */
 
+  // if return values of the API are null or zero display error message and exit
+  ERR_print_errors_fp(stderr);      /* Print errors to stderr */
 
 	
 	if (argc == 1) { //handles initial call to directory
+
+    /************************************************************/
+    /*** Create and connect client's socket to SSL server     ***/
+    /************************************************************/
+
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
 	  serv_addr.sin_family			= AF_INET;
 	  serv_addr.sin_addr.s_addr	= inet_addr(DIR_HOST_ADDR);
-	  serv_addr.sin_port			= htons(DIR_TCP_PORT);
-     
+	  serv_addr.sin_port			= htons(DIR_TCP_PORT); 
+
+    /* create socket */
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		  perror("client: can't open stream socket");
 		  exit(1);
@@ -43,11 +60,28 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to directory");
 		  exit(1);
 	  }
+
+    /************************************************************/
+    /*** Establish SSL protocol and create encryption link    ***/
+    /************************************************************/
+    SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
+    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
+    if ( SSL_connect(ssl) == -1 ) {     /* perform the connection */
+      ERR_print_errors_fp(stderr);        /* report any errors */
+    }
+
     snprintf(holder, MAX, "2");
-    write(sockfd, holder, MAX); 
+    //write(sockfd, holder, MAX); 
+    if(SSL_write(ssl, holder, MAX) < 0)   /* encrypt/send */
+    {
+      ERR_print_errors_fp(stderr);
+    }
+
     //Note: Will need to write a message to the directory saying that I'm client with 2
     //fprintf(stdout, "Before nread if branch\n");
-    if ((nread = read(sockfd, s, MAX)) < 0) { 
+
+
+    if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
 		  perror("Error reading from directory\n");
       close(sockfd); 
       exit(1);
@@ -58,7 +92,7 @@ int main(int argc, char **argv)
         while(nread > 0){
             snprintf(holder, MAX, "Read from server: %s\n", s);
             printf("%s", holder);
-            nread = read(sockfd, s, MAX);
+            nread = SSL_read(ssl, s, MAX);
         }
         close(sockfd);
         exit(0);				
@@ -109,7 +143,16 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to server");
 		  exit(1);
 	  }
- 
+
+
+    /************************************************************/
+    /*** Establish SSL protocol and create encryption link    ***/
+    /************************************************************/
+    SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
+    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
+    if ( SSL_connect(ssl) == -1 ) {     /* perform the connection */
+      ERR_print_errors_fp(stderr);        /* report any errors */
+    }
 
 
 	  for(;;) {
@@ -128,14 +171,14 @@ int main(int argc, char **argv)
              if (userFlag == 0) {
               //fprintf(stdout, "In userFlag 0 send branch\n");
               snprintf(holder, MAX, "1%s", s);
-              write(sockfd, holder, MAX);
+              SSL_write(ssl, holder, MAX);
               userFlag = 1;
             }
             else {
               //catches regular message
               //fprintf(stdout, "In userFlag 2 send branch\n");
               snprintf(holder, MAX, "2%s", s);
-              write(sockfd, holder, MAX);
+              SSL_write(ssl, holder, MAX);
             }
 				  } 
           else {
@@ -145,7 +188,7 @@ int main(int argc, char **argv)
 			  /* Check whether there's a message from the server to read */
 			  if (FD_ISSET(sockfd, &readset)) { 
 				  //fprintf(stdout, "In client read from server.\n");
-          if ((nread = read(sockfd, s, MAX)) < 0) { 
+          if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
 					  fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
