@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "inet.h"
 #include "common.h"
+#include <openssl/ssl.h>
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -59,11 +60,12 @@ int main(int argc, char **argv)
   /* Initializing SSL Stuff. NOTE: this doesn't do error checking yet 
   Copied from the Linux socket programming chapter 16 */
   //might need an include statement up top - Aidan
+  //SSL_library_init(); I'm pretty sure this is automatically done - Aidan
   SSL_METHOD *method;
   SSL_CTX *ctx;
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  method = SSLv2_client_method();
+  method = SSLv23_client_method();
   ctx = SSL_CTX_new(method);
 
 
@@ -106,9 +108,9 @@ int main(int argc, char **argv)
     //fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
         //Note: Will need to write a message to the directory saying that I'm server with 1. If you recieve 1 that means your have the same name as another server
     snprintf(s, MAX, "1%d %s", argvValTwo, argvValOne);
-    write(dirsock, s, MAX); //might be dirsock here
+    SSL_write(ssl, s, MAX); //might be dirsock here
     //fprintf(stdout, "After write 1 to server.\n");
-    if ((nread = recv(dirsock, s, MAX)) < 0) { 
+    if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
 		  perror("Error reading from directory\n"); 
       exit(1);
 	  } 
@@ -137,23 +139,33 @@ int main(int argc, char **argv)
 
   /* Setting up SSL server stuff. Copied from Copied from the Linux socket programming chapter 16*/
 
-  method = SSLv3_server_method(); //I shouldn't need to copy anything else over bc it was loaded earlier - Aidan
+  method = SSLv23_server_method(); //I shouldn't need to copy anything else over bc it was loaded earlier - Aidan
   ctx = SSL_CTX_new(method);
   //creating a switch statement based on what server name is to use proper key/cert files
   //NOTE: this may need to go above the directory check statement
-  switch(argvValOne) 
-  { //NOTE: double check these values are correct with underscores and such. Lucas can't remember
+  //switch(argvValOne) 
+  //{ //NOTE: double check these values are correct with underscores and such. Lucas can't remember
   //the correct values and I don't know where to check - Aidan
-    case "KSU Football":
-      SSL_CTX_use_certificate_file(ctx, "chat_server_ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
-      SSL_CTX_use_PrivateKey_file(ctx, "chat_server_ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
-      if (!SSL_CT_check_private_key(ctx))
-        fprintf(stderr, "Key & certificate don't match.");
-    case "KSU CIS":
-    default: 
-      fprintf(stderr, "ERROR: you used a non-approved server name. Exiting program");
-      exit(0);
+  if (strncmp("KSU Football", argvValOne, MAX) == 0)
+  {
+    SSL_CTX_use_certificate_file(ctx, "chat_server_ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
+    SSL_CTX_use_PrivateKey_file(ctx, "chat_server_ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
+    if (!SSL_CT_check_private_key(ctx))
+      fprintf(stderr, "Key & certificate don't match.");
+  } 
+  else if (strncmp("KSU CIS", argvValOne, MAX) == 0)
+  {
+    SSL_CTX_use_certificate_file(ctx, "chat_server_ksucis.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
+    SSL_CTX_use_PrivateKey_file(ctx, "chat_server_ksucis.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
+    if (!SSL_CT_check_private_key(ctx))
+      fprintf(stderr, "Key & certificate don't match.");
   }
+  else
+  {
+    fprintf(stderr, "ERROR: you used a non-approved server name. Exiting program");
+    exit(0);
+  }
+  //}
 
 	/* Create communication endpoint */
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -228,7 +240,7 @@ int main(int argc, char **argv)
         newConnection->cliSSL = SSL_new(ctx);
         //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
         SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
-        if (SSL_accept(newConnection->cliSSL) == FAIL)
+        if (SSL_accept(newConnection->cliSSL) < 0)
           ERR_print_errors_fp(stderr);
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
       }
@@ -248,7 +260,9 @@ int main(int argc, char **argv)
           else if (readRet == 0) {
             //Catches client logging out
             snprintf(holder, MAX, "%s has logged out.", tempStruct->nickname);
-            close(tempStruct->userSocket); 
+            close(tempStruct->userSocket);
+            //SSL_shutdown(tempStruct->cliSSL);
+            //SSL_free(tempStruct->cliSSL); 
             LIST_REMOVE(tempStruct, clients);
             free(tempStruct);
             size--;
