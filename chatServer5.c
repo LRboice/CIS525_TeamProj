@@ -18,6 +18,7 @@ struct connection {
   int userSocket;
   int nicknameFlag;
   char nickname[MAX];
+  SSL* cliSSL; //not 100% sure on this generation - Aidan
   LIST_ENTRY(connection) clients;
 };
 
@@ -55,8 +56,9 @@ int main(int argc, char **argv)
  
   fd_set readset;
 
-  /* Initializing SSL Stuff. NOTE: this doesn't do error checking yet */
-  //might need an include statement up top
+  /* Initializing SSL Stuff. NOTE: this doesn't do error checking yet 
+  Copied from the Linux socket programming chapter 16 */
+  //might need an include statement up top - Aidan
   SSL_METHOD *method;
   SSL_CTX *ctx;
   OpenSSL_add_all_algorithms();
@@ -82,38 +84,31 @@ int main(int argc, char **argv)
 		  exit(1);
 	}
 
-  /* SSL Stuff Part II. 
+  /* SSL Stuff Part II. Copied from the Linux socket programming chapter 16
   I don't think I need to change how the socket was generated previously but I could be wrong*/
   SSL *ssl = SSL_new(ctx);
   SSL_set_fd(ssl, dirsock);
   if (SSL_connect(ssl) == -1)
     ERR_print_errors_fp(stderr);
 
-  //char* cipher_name = SSL_get_cipher(ssl); //I don't think this is needed but it's commented out here just in case
+  //char* cipher_name = SSL_get_cipher(ssl); //I don't think this is needed but it's commented out here just in case - Aidan
 
-  char line[1024];
- 
-  /*dirlen = sizeof(dir_addr); //can't resuse sockfd
-  int newsockfd = accept(dirsock, (struct sockaddr *) &dir_addr, &dirlen);
-  if (newsockfd <= 0) {
-    perror("server: accept error from directory");
-    exit(1);
-  }
-  //I think the write would naturally go first, but I might be wrong on that account
+  /*char line[1024];
+  X509 *x509 = X509_get_subject_name(cert);
+  X509_NAME_oneline(x509, line, sizeof[line]); // Convert it 
+  printf("Subject: %s\ n", line);
+  x509 = X509_get_issuer_name(cert);            // get issuer 
+  X509_NAME_oneline(x509, line, sizeof(line));  // convert it 
+  printf("Issuer: %s\ n", line);*/
+  //I'm not 100% sure how to use this rn, but I'm copying it over for the time being - Aidan
   
-  int readRet;
-  if ((readRet = read(newsockfd, s, MAX)) < 0) { 
-    fprintf(stderr, "%s:%d Error reading from directory\n", __FILE__, __LINE__);
-    exit(1);
-  }  //probably going to be something like this*/
-  
-    fprintf(stdout, "Before write 1 to server.\n");
-    fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
+    //fprintf(stdout, "Before write 1 to server.\n");
+    //fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
         //Note: Will need to write a message to the directory saying that I'm server with 1. If you recieve 1 that means your have the same name as another server
     snprintf(s, MAX, "1%d %s", argvValTwo, argvValOne);
     write(dirsock, s, MAX); //might be dirsock here
-    fprintf(stdout, "After write 1 to server.\n");
-    if ((nread = read(dirsock, s, MAX)) < 0) { 
+    //fprintf(stdout, "After write 1 to server.\n");
+    if ((nread = recv(dirsock, s, MAX)) < 0) { 
 		  perror("Error reading from directory\n"); 
       exit(1);
 	  } 
@@ -138,7 +133,28 @@ int main(int argc, char **argv)
       exit(0);
     }
   /* End directory stuff */
- fprintf(stdout, "End directory stuff.\n");
+  //fprintf(stdout, "End directory stuff.\n");
+
+  /* Setting up SSL server stuff. Copied from Copied from the Linux socket programming chapter 16*/
+
+  method = SSLv3_server_method(); //I shouldn't need to copy anything else over bc it was loaded earlier - Aidan
+  ctx = SSL_CTX_new(method);
+  //creating a switch statement based on what server name is to use proper key/cert files
+  //NOTE: this may need to go above the directory check statement
+  switch(argvValOne) 
+  { //NOTE: double check these values are correct with underscores and such. Lucas can't remember
+  //the correct values and I don't know where to check - Aidan
+    case "KSU Football":
+      SSL_CTX_use_certificate_file(ctx, "chat_server_ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
+      SSL_CTX_use_PrivateKey_file(ctx, "chat_server_ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
+      if (!SSL_CT_check_private_key(ctx))
+        fprintf(stderr, "Key & certificate don't match.");
+    case "KSU CIS":
+    default: 
+      fprintf(stderr, "ERROR: you used a non-approved server name. Exiting program");
+      exit(0);
+  }
+
 	/* Create communication endpoint */
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("server: can't open stream socket");
@@ -209,6 +225,10 @@ int main(int argc, char **argv)
         newConnection->nicknameFlag = 0;
         LIST_INSERT_HEAD(&head, newConnection, clients); //need to know that this won't have nickname set first time
         size++;
+        newConnection->cliSSL = SSL_new(ctx);
+        SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
+        if (SSL_accept(newConnection->cliSSL) == FAIL)
+          ERR_print_errors_fp(stderr);
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
       }
       struct connection* tempStruct = LIST_FIRST(&head);
@@ -221,7 +241,7 @@ int main(int argc, char **argv)
           //fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
           int readRet;
-          if ((readRet = read(tempStruct->userSocket, s, MAX)) < 0) { 
+          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { 
 			      fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
           }
           else if (readRet == 0) {
@@ -231,10 +251,11 @@ int main(int argc, char **argv)
             LIST_REMOVE(tempStruct, clients);
             free(tempStruct);
             size--;
+            //NOTE: need to make the change to fix the client joining issue
             struct connection* sendStruct = LIST_FIRST(&head);
             LIST_FOREACH(sendStruct, &head, clients){
               if (sendStruct->nicknameFlag == 1){
-                write(sendStruct->userSocket, holder, MAX);
+                SSL_write(sendStruct->userSocket, holder, MAX);
               }
             }
           }
@@ -269,7 +290,7 @@ int main(int argc, char **argv)
                 }
                 else { //if someone else already has name
                   snprintf(holder, MAX, "1"); 
-                  write(tempStruct->userSocket, holder, MAX);
+                  SSL_write(tempStruct->userSocket, holder, MAX);
                 }
                 break;
               case '2':
@@ -288,7 +309,7 @@ int main(int argc, char **argv)
               struct connection* sendStruct = LIST_FIRST(&head);
               LIST_FOREACH(sendStruct, &head, clients){
                 if(sendStruct->nicknameFlag == 1){
-                  write(sendStruct->userSocket, holder, MAX);
+                  SSL_write(sendStruct->userSocket, holder, MAX);
                 }
               }
             }
