@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "inet.h"
 #include "common.h"
+#include <openssl/ssl.h>
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
