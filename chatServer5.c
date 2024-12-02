@@ -55,6 +55,16 @@ int main(int argc, char **argv)
  
   fd_set readset;
 
+  /* Initializing SSL Stuff. NOTE: this doesn't do error checking yet */
+  //might need an include statement up top
+  SSL_METHOD *method;
+  SSL_CTX *ctx;
+  OpenSSL_add_all_algorithms();
+  SSL_load_error_strings();
+  method = SSLv2_client_method();
+  ctx = SSL_CTX_new(method);
+
+
   /* Register with directory */
   memset((char *) &dir_addr, 0, sizeof(dir_addr));
 	dir_addr.sin_family = AF_INET;
@@ -71,6 +81,17 @@ int main(int argc, char **argv)
 		  perror("server: can't connect to directory");
 		  exit(1);
 	}
+
+  /* SSL Stuff Part II. 
+  I don't think I need to change how the socket was generated previously but I could be wrong*/
+  SSL *ssl = SSL_new(ctx);
+  SSL_set_fd(ssl, dirsock);
+  if (SSL_connect(ssl) == -1)
+    ERR_print_errors_fp(stderr);
+
+  //char* cipher_name = SSL_get_cipher(ssl); //I don't think this is needed but it's commented out here just in case
+
+  char line[1024];
  
   /*dirlen = sizeof(dir_addr); //can't resuse sockfd
   int newsockfd = accept(dirsock, (struct sockaddr *) &dir_addr, &dirlen);
