@@ -74,6 +74,7 @@ int main(int argc, char **argv)
 		  perror("server: can't connect to directory");
 		  exit(1);
 	}
+  //the connection with the directory has to not hang, the easiest way is to be nonblocking
   
   //fprintf(stdout, "Before write 1 to server.\n");
   //fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
