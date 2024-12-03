@@ -16,6 +16,7 @@ int main(int argc, char **argv)
 {
 	char s[MAX] = {'\0'}; 
 	fd_set			readset; 
+  fd_set      writeset;
 	int				sockfd;
 	struct sockaddr_in serv_addr;
 	int				nread;	/* number of characters */
@@ -23,6 +24,9 @@ int main(int argc, char **argv)
   char holder[MAX] = {'\0', '\0'}; //used for concatinating strings with.
   char        argvValOne[MAX];
   int         argvValTwo;
+  char to[MAX], fr[MAX];
+  char *tooptr = to, *froptr = fr;
+  int readyFlag = 0, n;
   
 
 
@@ -109,6 +113,11 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to server");
 		  exit(1);
 	  }
+
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
+      perror("client: couldn't set new client socket to nonblocking");
+      exit(1);
+    }
  
 
 
@@ -117,15 +126,23 @@ int main(int argc, char **argv)
 		  FD_ZERO(&readset);
 		  FD_SET(STDIN_FILENO, &readset);
 		  FD_SET(sockfd, &readset);
-		  if (select(sockfd+1, &readset, NULL, NULL, NULL) > 0) 
+      FD_ZERO(&writeset);
+      if(readyFlag) {
+        FD_SET(sockfd, &writeset);
+      }
+		  if ((n = select(sockfd+1, &readset, &writeset, NULL, NULL)) > 0) 
 		  {
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
 				  //fprintf(stdout, "In client read from terminal.\n");
-          if (1 == scanf(" %[^\n]s", s)) {
+          //if (1 == scanf(" %[^\n]s", s)) {
+          if ((n = read(0, " %[^\n]s", &(fr[MAX]) - froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
+            if (errno != EWOULDBLOCK) { perror("read error on socket"); }
+          }
+          else if (n == 0) {
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
-             if (userFlag == 0) {
+            if (userFlag == 0) {
               //fprintf(stdout, "In userFlag 0 send branch\n");
               snprintf(holder, MAX, "1%s", s);
               write(sockfd, holder, MAX);

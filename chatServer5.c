@@ -80,6 +80,10 @@ int main(int argc, char **argv)
       //Note: Will need to write a message to the directory saying that I'm server with 1. If you recieve 1 that means your have the same name as another server
 
       //come back to this and make it nonblocking
+  /*int isDone = 1;
+  while (isDone){
+
+  }*/ //NOTE: Ask Eugene if this should be blocking. 
   snprintf(s, MAX, "1%d %s", argvValTwo, argvValOne);
   write(dirsock, s, MAX); //might be dirsock here
   //fprintf(stdout, "After write 1 to server.\n");
