@@ -65,7 +65,7 @@ int main(int argc, char **argv)
   
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  SSL_METHOD *method = TLS_server_method();
+  SSL_METHOD *method = SSLv23_client_method();
   SSL_CTX *ctx = SSL_CTX_new(method);
 
 
@@ -146,18 +146,18 @@ int main(int argc, char **argv)
   //switch(argvValOne) 
   //{ //NOTE: double check these values are correct with underscores and such. Lucas can't remember
   //the correct values and I don't know where to check - Aidan
-  if (strncmp("KSU Football", argvValOne, MAX) == 0)
+  if (strncmp("ksufootball", argvValOne, MAX) == 0)
   {
     SSL_CTX_use_certificate_file(ctx, "ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
     SSL_CTX_use_PrivateKey_file(ctx, "ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
     if (!SSL_CTX_check_private_key(ctx))
       fprintf(stderr, "Key & certificate don't match.");
   } 
-  else if (strncmp("KSU CIS", argvValOne, MAX) == 0)
+  else if (strncmp("ksucis", argvValOne, MAX) == 0)
   {
     SSL_CTX_use_certificate_file(ctx, "ksucis.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
     SSL_CTX_use_PrivateKey_file(ctx, "ksucis.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
-    if (!SSL_CT_check_private_key(ctx))
+    if (!SSL_CTX_check_private_key(ctx)) //double check return value
       fprintf(stderr, "Key & certificate don't match.");
   }
   else
@@ -210,12 +210,12 @@ int main(int argc, char **argv)
      if(loopStruct->userSocket > maxfd){
        maxfd = loopStruct->userSocket;
      }
-     //fprintf(stdout, "In adding loop. Current is %d\n", loopStruct->userSocket);
+     fprintf(stdout, "In adding loop. Current is %d\n", loopStruct->userSocket);
    }
    
    
 
-   //fprintf(stdout, "Right before select statement\n");
+   fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
    if (select(maxfd+1, &readset, NULL, NULL, NULL) > 0){
@@ -224,7 +224,7 @@ int main(int argc, char **argv)
      /* Accept a new connection request */
 		  clilen = sizeof(cli_addr);
       if (FD_ISSET(sockfd, &readset)){
-        //fprintf(stdout, "In the accept statement for socket.\n")
+        fprintf(stdout, "In the accept statement for socket.\n");
         //fprintf(stdout, "Readset 3: %u\n", readset);;
         int newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
         if (newsockfd <= 0) {
@@ -247,11 +247,11 @@ int main(int argc, char **argv)
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 
       while(tempStruct != NULL) {
-        //fprintf(stdout, "Top of while loop\n");
+        fprintf(stdout, "Top of while loop\n");
         char holder[MAX];
         //fprintf(stdout, "Readset 5: %u\n", readset); 
         if(FD_ISSET(tempStruct->userSocket, &readset)){ 
-          //fprintf(stdout, "In if fd_isset\n");
+          fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
           int readRet;
           if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { 
@@ -260,6 +260,7 @@ int main(int argc, char **argv)
           else if (readRet == 0) {
             //Catches client logging out
             snprintf(holder, MAX, "%s has logged out.", tempStruct->nickname);
+            //NOTE: Logging out causes a seg fault somewhere
             close(tempStruct->userSocket);
             //SSL_shutdown(tempStruct->cliSSL);
             //SSL_free(tempStruct->cliSSL); 
@@ -278,13 +279,13 @@ int main(int argc, char **argv)
           //fprintf(stdout, "Before switch statement. readRet: %d\n", readRet);
           else if (readRet > 0) { //checks if the client actually said something
             //int holder;
-            //fprintf(stdout, "Right before switch statement\n");
+            fprintf(stdout, "Right before switch statement\n");
 		        switch(s[0]) { /* based on the first character of the client's message */
               //logic: Client side chat will apply a '1' on the first message registering the user's name,
               //and a '2' on any further message that isn't a logout.
               case '1': 
                 //code to register name
-                //fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->nickname);
+                fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->nickname);
                 struct connection* nameStruct = LIST_FIRST(&head);
                 while (nameStruct != NULL){
                   if (strncmp(nameStruct->nickname, &s[1], MAX) == 0){
@@ -310,7 +311,7 @@ int main(int argc, char **argv)
                 break;
               case '2':
                 //code to do regular message stuff
-                //fprintf(stdout, "Test statement: Caught regular message.\n");
+                fprintf(stdout, "Test statement: Caught regular message.\n");
                 snprintf(holder, MAX-1, "%s: %s", tempStruct->nickname, &s[1]); 
                 break;
               case '3':
@@ -319,7 +320,7 @@ int main(int argc, char **argv)
                 break;
               default: snprintf(holder, MAX, "Invalid request\n");
             }
-            //fprintf(stdout, "End if switch statement\n");
+            fprintf(stdout, "End if switch statement\n");
             if (nameFlag == 1){
               struct connection* sendStruct = LIST_FIRST(&head);
               LIST_FOREACH(sendStruct, &head, clients){
@@ -331,7 +332,7 @@ int main(int argc, char **argv)
           }
         }
       tempStruct = LIST_NEXT(tempStruct, clients);
-      //fprintf(stdout, "End of while loop\n");
+      fprintf(stdout, "End of while loop\n");
       } 
     }	
 	//fprintf(stdout, "End of for loop\n");

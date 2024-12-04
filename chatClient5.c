@@ -31,6 +31,7 @@ int main(int argc, char **argv)
  
 
   //OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */ 
+  SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
   SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // allows only high-security ciphers, exlcuding ciphers without authentication and MD5
   SSL_load_error_strings();        /* Load/register error msg */
   const SSL_METHOD *method = TLS_client_method(); /* Create new client-method */
@@ -40,11 +41,11 @@ int main(int argc, char **argv)
     ERR_print_errors_fp(stderr);
     exit(2);
   }
-  SSL_CTX *ctx = SSL_CTX_new(method);            /* Create new context after init method */
+  /*SSL_CTX *ctx = SSL_CTX_new(method);            // Create new context after init method 
   if(ctx == NULL) {
     ERR_print_errors_fp(stderr);
     exit(2);
-  }
+  }*/
 	
 	if (argc == 1) { //handles initial call to directory
 
@@ -195,7 +196,7 @@ int main(int argc, char **argv)
       char actual[MAX];
       X509_NAME *subject = X509_get_subject_name(cert);
       X509_NAME_get_text_by_NID(subject, NID_commonName, actual, sizeof(actual));
-      const char *expected = arg[3]; 
+      const char *expected = argv[3]; 
       if (strcmp(actual, expected) != 0) {
           fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
           X509_free(cert);
@@ -219,19 +220,19 @@ int main(int argc, char **argv)
 		  {
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
-				  //fprintf(stdout, "In client read from terminal.\n");
+				  fprintf(stdout, "In client read from terminal.\n");
           if (1 == scanf(" %[^\n]s", s)) {
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {
-              //fprintf(stdout, "In userFlag 0 send branch\n");
+              fprintf(stdout, "In userFlag 0 send branch\n");
               snprintf(holder, MAX, "1%s", s);
               SSL_write(ssl, holder, MAX);
               userFlag = 1;
             }
             else {
               //catches regular message
-              //fprintf(stdout, "In userFlag 2 send branch\n");
+              fprintf(stdout, "In userFlag 2 send branch\n");
               snprintf(holder, MAX, "2%s", s);
               SSL_write(ssl, holder, MAX);
             }
@@ -242,18 +243,18 @@ int main(int argc, char **argv)
 		    }
 			  /* Check whether there's a message from the server to read */
 			  if (FD_ISSET(sockfd, &readset)) { 
-				  //fprintf(stdout, "In client read from server.\n");
+				  fprintf(stdout, "In client read from server.\n");
           if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
 					  fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
             if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
               fprintf(stdout, "Username already taken. Try again!\n");
-              //fprintf(stdout, "In userFlag 1 recieve branch\n");
+              fprintf(stdout, "In userFlag 1 recieve branch\n");
               userFlag = 0;
             }
             else {
-              //fprintf(stdout, "In userFlag 2 recieve branch\n");
+              fprintf(stdout, "In userFlag 2 recieve branch\n");
               userFlag = 2;
               char printer[MAX];
               snprintf(printer, MAX, "Read from server: %s\n", s);

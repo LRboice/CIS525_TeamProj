@@ -53,9 +53,9 @@ int main(int argc, char **argv)
   /*** Load certificate and private key files               ***/
   /************************************************************/
   /* set the local certificate from CertFile */
-  SSL_CTX_use_certificate_file(ctx, "directory_server.crt", SSL_FILETYPE_PEM);
+  SSL_CTX_use_certificate_file(ctx, "directory.crt", SSL_FILETYPE_PEM);
   /* set private key from KeyFile */
-  SSL_CTX_use_PrivateKey_file(ctx, "directory_server.key", SSL_FILETYPE_PEM);
+  SSL_CTX_use_PrivateKey_file(ctx, "directory.key", SSL_FILETYPE_PEM);
   /* verify private key */
   if ( !SSL_CTX_check_private_key(ctx) )
     fprintf(stderr, "Key & certificate don't match");
