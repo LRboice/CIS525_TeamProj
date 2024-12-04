@@ -65,7 +65,7 @@ int main(int argc, char **argv)
   
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  SSL_METHOD *method = SSLv23_client_method();
+  SSL_METHOD *method = TLS_server_method();
   SSL_CTX *ctx = SSL_CTX_new(method);
 
 
@@ -150,7 +150,7 @@ int main(int argc, char **argv)
   {
     SSL_CTX_use_certificate_file(ctx, "ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
     SSL_CTX_use_PrivateKey_file(ctx, "ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
-    if (!SSL_CT_check_private_key(ctx))
+    if (!SSL_CTX_check_private_key(ctx))
       fprintf(stderr, "Key & certificate don't match.");
   } 
   else if (strncmp("KSU CIS", argvValOne, MAX) == 0)
