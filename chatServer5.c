@@ -192,6 +192,7 @@ int main(int argc, char **argv)
   //fprintf(stdout, "End directory stuff.\n");
 
   /* Setting up SSL server stuff. Copied from Copied from the Linux socket programming chapter 16*/ 
+  // had to modify it as it was having context init errors - lucas
   const SSL_METHOD *server_method = TLS_server_method(); 
   SSL_CTX *srv_ctx = SSL_CTX_new(server_method); 
   if (!srv_ctx) {
@@ -218,14 +219,14 @@ int main(int argc, char **argv)
   // You can check the names of the keys and certs in 
   // the directory containing the rest of the project files. 
   //  - lucas
-  if (strncmp("ksuFootball", argvValOne, MAX) == 0)
+  if (strncmp("KSU Football", argvValOne, MAX) == 0)
   {
     SSL_CTX_use_certificate_file(srv_ctx, "ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
     SSL_CTX_use_PrivateKey_file(srv_ctx, "ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
     if (!SSL_CTX_check_private_key(srv_ctx))
       fprintf(stderr, "Key & certificate don't match.");
   } 
-  else if (strncmp("ksucis", argvValOne, MAX) == 0)
+  else if (strncmp("KSU CIS", argvValOne, MAX) == 0)
   {
     SSL_CTX_use_certificate_file(srv_ctx, "ksucis.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
     SSL_CTX_use_PrivateKey_file(srv_ctx, "ksucis.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
@@ -294,7 +295,7 @@ int main(int argc, char **argv)
      //fprintf(stdout, "Readset 2: %u\n", readset);
      //fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
-	clilen = sizeof(cli_addr);
+	    clilen = sizeof(cli_addr);
       if (FD_ISSET(sockfd, &readset)){
         //fprintf(stdout, "In the accept statement for socket.\n")
         //fprintf(stdout, "Readset 3: %u\n", readset);;
@@ -307,11 +308,12 @@ int main(int argc, char **argv)
         newConnection->userSocket = newsockfd;
         newConnection->nickname[0] = '\0';
         newConnection->nicknameFlag = 0;
-        /* add new ssl for bio and client */
+        /* add new ssl for bio btwn server and client */
         newConnection->cliSSL = SSL_new(srv_ctx);
         BIO *clientBio = BIO_new_socket(newsockfd, BIO_NOCLOSE); 
         BIO_set_nbio(clientBio, 1); 
         //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
+        // It's good we just needed ctx. 
         SSL_set_bio(newConnection->cliSSL, clientBio, clientBio);
 
         if (SSL_accept(newConnection->cliSSL) < 0){
@@ -408,7 +410,9 @@ int main(int argc, char **argv)
                     free(tempStruct); 
                     size--; 
                   }
+                } 
                 break;
+              }
               case '2':
                 //code to do regular message stuff
                 //fprintf(stdout, "Test statement: Caught regular message.\n");
@@ -445,5 +449,4 @@ int main(int argc, char **argv)
     }	
 	//fprintf(stdout, "End of for loop\n");
   }
- }
 }

@@ -132,9 +132,9 @@ int main(int argc, char **argv)
       //handle reading from directory. will need a loop due to how directory puts stuff to client
         //fprintf(stdout, "In read from Directory branch\n");
         while(nread > 0){
-            snprintf(holder, MAX, "Read from server: %.90s\n", s);
-            fprintf(stdout, "%s", holder);
-            nread = SSL_read(ssl, s, MAX);
+            snprintf(holder, MAX, "Read from server: %.90s\n", s); 
+            fprintf(stdout, "%s", holder);// ALL MYSTERY VALUES FOR SNPRINTF CALLS
+            nread = SSL_read(ssl, s, MAX);// ARE TAILORED TO ERROR MSGS THROWN PREVIOUSLY, IDFK IT WORKS THO
         }
         close(sockfd);
         exit(0);				
