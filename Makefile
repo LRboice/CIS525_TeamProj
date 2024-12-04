@@ -2,7 +2,7 @@
 # Makefile for chat server
 #
 CC	= gcc
-EXECUTABLES=chatClient2 chatServer2 directoryServer2
+EXECUTABLES=chatClient5 chatServer5 directoryServer5
 INCLUDES	= $(wildcard *.h)
 SOURCES	= $(wildcard *.c)
 DEPS		= $(INCLUDES)

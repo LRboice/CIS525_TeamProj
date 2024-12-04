@@ -8,11 +8,11 @@
 #include "common.h"
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
+#include <openssl/err.h> 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
   TODO: have the client have different functionality based on different argc input
 */
-int ssl_BIO *create_bio_sock()
 int main(int argc, char **argv)
 {
 	char s[MAX] = {'\0'}; 
@@ -28,23 +28,24 @@ int main(int argc, char **argv)
   /************************************************************/
   /*** Initialize Client SSL state (from Linux Socket Programming chapter 16)   ***/
   /************************************************************/
-  SSL_METHOD *method;
-  SSL_CTX *ctx;
-  //OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */ 
-  SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // allows only high-security ciphers, exlcuding ciphers without authentication and MD5
-  SSL_load_error_strings();        /* Load/register error msg */
-  method = TLS_client_method(); /* Create new client-method */
-  
-  // if return values of the API are null or zero display error message and exit
+  /*const SSL_METHOD *method = TLS_client_method();   /* Create new client-method   
+
   if(method == NULL) {
     ERR_print_errors_fp(stderr);
     exit(2);
+  } */
+  SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());  // Fixed uninitialized ctx
+  if (ctx == NULL) {
+      ERR_print_errors_fp(stderr);  // Added error handling for SSL_CTX creation
+      exit(2);
   }
-  ctx = SSL_CTX_new(method);            /* Create new context */
-  if(ctx == NULL) {
-    ERR_print_errors_fp(stderr);
-    exit(2);
-  }
+    
+    SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // Set cipher list 
+    SSL_load_error_strings();        /* Load/register error msg */
+  
+  // if return values of the API are null or zero display error message and exit
+
+  
 	
 	if (argc == 1) { //handles initial call to directory
 
@@ -78,7 +79,7 @@ int main(int argc, char **argv)
       perror("client: BIO_new_socket failed"); 
       exit(1);
     }
-    BIO_set_flags(bio, BIO_FLAGS_NONBLOCK); /*make it non blocking */
+    BIO_set_flags(bio, BIO_SOCK_NONBLOCK); /*make it non blocking */
     SSL_set_bio(ssl, bio, bio);/*set bio for ssl con*/ 
     
     if (SSL_connect(ssl) <= 0 ) {     /* perform the connection */
@@ -99,15 +100,13 @@ int main(int argc, char **argv)
       if (strcmp(actual, expected) != 0) {
           fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
           X509_free(cert);
-          SSL_free(ssl);
-          BIO_free(bio); 
+          SSL_free(ssl);  
           close(sockfd);
           exit(1);
       }
     } else {
       perror("No certificates.\n");
-      SSL_free(ssl);
-      BIO_free(bio); 
+      SSL_free(ssl); 
       close(sockfd);
       exit(1);
     }
@@ -133,8 +132,8 @@ int main(int argc, char **argv)
       //handle reading from directory. will need a loop due to how directory puts stuff to client
         //fprintf(stdout, "In read from Directory branch\n");
         while(nread > 0){
-            snprintf(holder, MAX, "Read from server: %s\n", s);
-            fprintf("%s", holder);
+            snprintf(holder, MAX, "Read from server: %.90s\n", s);
+            fprintf(stdout, "%s", holder);
             nread = SSL_read(ssl, s, MAX);
         }
         close(sockfd);
@@ -145,8 +144,7 @@ int main(int argc, char **argv)
       close(sockfd);
       exit(0);
     }
-    SSL_free(ssl);  /*free it all up end of directory server calls*/
-    BIO_free(bio); 
+    SSL_free(ssl);  /*free it all up end of directory server calls*/ 
     close(sockfd); 
     SSL_CTX_free(ctx); 
     exit(0); 
@@ -202,7 +200,7 @@ int main(int argc, char **argv)
       perror("client: BIO_new_socket failed"); 
       exit(1); 
     }
-    BIO_set_flags(bio, BIO_FLAGS_NONBLOCK); 
+    BIO_set_flags(bio, BIO_SOCK_NONBLOCK); 
     SSL_set_bio(ssl, bio, bio); 
 
     if (SSL_connect(ssl) == -1 ) {     /* perform the connection */
@@ -217,7 +215,7 @@ int main(int argc, char **argv)
       char actual[MAX];
       X509_NAME *subject = X509_get_subject_name(cert);
       X509_NAME_get_text_by_NID(subject, NID_commonName, actual, sizeof(actual));
-      const char *expected = arg[3]; 
+      const char *expected = argv[3]; 
       if (strcmp(actual, expected) != 0) {
           fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
           X509_free(cert);
@@ -227,8 +225,7 @@ int main(int argc, char **argv)
       }
     } else {
       printf("No certificates.\n");
-      SSL_free(ssl);
-      BIO_free(bio); 
+      SSL_free(ssl); 
       close(sockfd);
       exit(1);
     }
@@ -248,14 +245,14 @@ int main(int argc, char **argv)
             //handles case of 1st message to register username
              if (userFlag == 0) {
               //fprintf(stdout, "In userFlag 0 send branch\n");
-              snprintf(holder, MAX, "1%s", s);
+              snprintf(holder, MAX-2, "1%.97s", s);
               SSL_write(ssl, holder, MAX);
               userFlag = 1;
             }
             else {
               //catches regular message
               //fprintf(stdout, "In userFlag 2 send branch\n");
-              snprintf(holder, MAX, "2%s", s);
+              snprintf(holder, MAX, "2%.98s", s);
               SSL_write(ssl, holder, MAX);
             }
 				  } 
@@ -279,15 +276,14 @@ int main(int argc, char **argv)
               //fprintf(stdout, "In userFlag 2 recieve branch\n");
               userFlag = 2;
               char printer[MAX];
-              snprintf(printer, MAX, "Read from server: %s\n", s);
-              fprintf("%s", printer);
+              snprintf(printer, MAX, "Read from server: %.90s\n", s);
+              fprintf(stdout,"%s", printer);
             }
 					
 				  }
           else {
             fprintf(stdout, "Server closed\n");
-            SSL_free(ssl); /*wrap up mem here */
-            BIO_free(bio); 
+            SSL_free(ssl); /*wrap up mem here */ 
             close(sockfd);
             SSL_CTX_free(ctx);
             exit(0);
@@ -295,8 +291,7 @@ int main(int argc, char **argv)
 			  }
 		  }
 	  } /*all done lets get outta here */
-    SSL_free(ssl);
-	  BIO_free(bio);
+    SSL_free(ssl); 
     close(sockfd);
     SSL_CTX_free(ctx);
     

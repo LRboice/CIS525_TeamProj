@@ -9,6 +9,9 @@
 #include "inet.h"
 #include "common.h"
 #include <openssl/ssl.h>
+#include <openssl/bio.h>
+#include <openssl/err.h>
+
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -20,10 +23,48 @@ struct connection {
   int nicknameFlag;
   char nickname[MAX];
   SSL* cliSSL; //not 100% sure on this generation - Aidan
+  BIO* bio; 
   LIST_ENTRY(connection) clients;
 };
 
 LIST_HEAD(listhead, connection);
+
+/*******       The error handling and retries require helpers, I cant handle the scrolling anymore    ***********/
+/* this one is for writing, has three possible results. 
+   They are as such: 
+   * >0: num of successfully written bytes (good for truncation fixing if it messes anything up)
+      0: retry the call , BIO_should_retry is true 
+     -1: Error got thrown, not able to retry. 
+ */
+int ssl_nonbio_write(SSL *ssl,  char *buf, int len){
+  int retMe = SSL_write(ssl, buf, len); 
+  if (retMe <= 0){
+      if(!BIO_should_retry(SSL_get_wbio(ssl))){
+        return -1; //can't retry its false!!!!!!!!!!!!!!1
+      }
+      else{ //flag for retry attempt, godspeed
+        return 0; 
+      }
+  }
+  return retMe; 
+}
+/* Basically the same as the write helper but
+   for read. Same return codes, but the sucessful 
+   call returns the number of READ bytes. 
+ */
+int ssl_nonbio_read(SSL *ssl, char *buf, int len)
+{
+  int retMe = SSL_read(ssl, buf, len); 
+  if(retMe <= 0){
+    if(!BIO_should_retry(SSL_get_rbio(ssl))){
+      return -1; 
+    }
+    else{
+      return 0; 
+    }
+  }
+  return retMe; 
+}
 
 int main(int argc, char **argv)
 {
@@ -61,14 +102,17 @@ int main(int argc, char **argv)
   Copied from the Linux socket programming chapter 16 */
   //might need an include statement up top - Aidan
   //SSL_library_init(); I'm pretty sure this is automatically done - Aidan
-  SSL_METHOD *method;
-  SSL_CTX *ctx;
+ 
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  method = SSLv23_client_method();
-  ctx = SSL_CTX_new(method);
+  //method = SSLv23_client_method(); don't think we need this one yet thats later - lucas
+  const SSL_METHOD *method = TLS_server_method(); 
+  SSL_CTX *ctx = SSL_CTX_new(method);
 
-
+  if (!ctx) {
+    ERR_print_errors_fp(stderr);
+    exit(1);
+  }
   /* Register with directory */
   memset((char *) &dir_addr, 0, sizeof(dir_addr));
 	dir_addr.sin_family = AF_INET;
@@ -89,10 +133,14 @@ int main(int argc, char **argv)
   /* SSL Stuff Part II. Copied from the Linux socket programming chapter 16
   I don't think I need to change how the socket was generated previously but I could be wrong*/
   SSL *ssl = SSL_new(ctx);
-  SSL_set_fd(ssl, dirsock);
-  if (SSL_connect(ssl) == -1)
-    ERR_print_errors_fp(stderr);
+  BIO *dirBIO = BIO_new_socket(dirsock, BIO_NOCLOSE); 
+  BIO_set_nbio(dirBIO, 1); 
+  SSL_set_bio(ssl, dirBIO, dirBIO);
 
+  if (SSL_connect(ssl) <= 0 && !BIO_should_retry(dirBIO)) {
+    ERR_print_errors_fp(stderr);
+    exit(1);
+  }
   //char* cipher_name = SSL_get_cipher(ssl); //I don't think this is needed but it's commented out here just in case - Aidan
 
   /*char line[1024];
@@ -107,13 +155,19 @@ int main(int argc, char **argv)
     //fprintf(stdout, "Before write 1 to server.\n");
     //fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
         //Note: Will need to write a message to the directory saying that I'm server with 1. If you recieve 1 that means your have the same name as another server
-    snprintf(s, MAX, "1%d %s", argvValTwo, argvValOne);
-    SSL_write(ssl, s, MAX); //might be dirsock here
-    //fprintf(stdout, "After write 1 to server.\n");
-    if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
-		  perror("Error reading from directory\n"); 
+    snprintf(s, MAX, "1%d %.1000s", argvValTwo, argvValOne);
+    
+    if (ssl_nonbio_write(ssl, s, MAX) == -1) {
+      perror("Error writing to directory\n");
       exit(1);
-	  } 
+    } 
+    //fprintf(stdout, "After write 1 to server.\n");
+    nread = ssl_nonbio_read(ssl, s, MAX); 
+   
+    if (nread == -1) {
+      perror("Error reading from directory\n");
+      exit(1);
+    }
     else if (nread > 0) {
         //fprintf(stdout, "In userFlag 2 recieve branch\n");
  			  if(strncmp(&s[0], "1", MAX) == 0){
@@ -137,27 +191,32 @@ int main(int argc, char **argv)
   /* End directory stuff */
   //fprintf(stdout, "End directory stuff.\n");
 
-  /* Setting up SSL server stuff. Copied from Copied from the Linux socket programming chapter 16*/
+  /* Setting up SSL server stuff. Copied from Copied from the Linux socket programming chapter 16*/ 
+  const SSL_METHOD *server_method = TLS_server_method(); 
+  SSL_CTX *srv_ctx = SSL_CTX_new(server_method); 
+  if (!srv_ctx) {
+    ERR_print_errors_fp(stderr);
+    exit(1);
+  }
 
-  method = SSLv23_server_method(); //I shouldn't need to copy anything else over bc it was loaded earlier - Aidan
-  ctx = SSL_CTX_new(method);
   //creating a switch statement based on what server name is to use proper key/cert files
   //NOTE: this may need to go above the directory check statement
   //switch(argvValOne) 
   //{ //NOTE: double check these values are correct with underscores and such. Lucas can't remember
   //the correct values and I don't know where to check - Aidan
-  if (strncmp("KSU Football", argvValOne, MAX) == 0)
+  // Names and cert file names are corrected - lucas
+  if (strncmp("ksuFootball", argvValOne, MAX) == 0)
   {
-    SSL_CTX_use_certificate_file(ctx, "chat_server_ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
-    SSL_CTX_use_PrivateKey_file(ctx, "chat_server_ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
-    if (!SSL_CT_check_private_key(ctx))
+    SSL_CTX_use_certificate_file(srv_ctx, "ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
+    SSL_CTX_use_PrivateKey_file(srv_ctx, "ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
+    if (!SSL_CTX_check_private_key(srv_ctx))
       fprintf(stderr, "Key & certificate don't match.");
   } 
-  else if (strncmp("KSU CIS", argvValOne, MAX) == 0)
+  else if (strncmp("ksucis", argvValOne, MAX) == 0)
   {
-    SSL_CTX_use_certificate_file(ctx, "chat_server_ksucis.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
-    SSL_CTX_use_PrivateKey_file(ctx, "chat_server_ksucis.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
-    if (!SSL_CT_check_private_key(ctx))
+    SSL_CTX_use_certificate_file(srv_ctx, "ksucis.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
+    SSL_CTX_use_PrivateKey_file(srv_ctx, "ksucis.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
+    if (!SSL_CTX_check_private_key(srv_ctx))
       fprintf(stderr, "Key & certificate don't match.");
   }
   else
@@ -222,7 +281,7 @@ int main(int argc, char **argv)
      //fprintf(stdout, "Readset 2: %u\n", readset);
      //fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
-		  clilen = sizeof(cli_addr);
+	clilen = sizeof(cli_addr);
       if (FD_ISSET(sockfd, &readset)){
         //fprintf(stdout, "In the accept statement for socket.\n")
         //fprintf(stdout, "Readset 3: %u\n", readset);;
@@ -235,14 +294,24 @@ int main(int argc, char **argv)
         newConnection->userSocket = newsockfd;
         newConnection->nickname[0] = '\0';
         newConnection->nicknameFlag = 0;
-        LIST_INSERT_HEAD(&head, newConnection, clients); //need to know that this won't have nickname set first time
-        size++;
-        newConnection->cliSSL = SSL_new(ctx);
+        /* add new ssl for bio and client */
+        newConnection->cliSSL = SSL_new(srv_ctx);
+        BIO *clientBio = BIO_new_socket(newsockfd, BIO_NOCLOSE); 
+        BIO_set_nbio(clientBio, 1); 
         //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
-        SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
-        if (SSL_accept(newConnection->cliSSL) < 0)
-          ERR_print_errors_fp(stderr);
+        SSL_set_bio(newConnection->cliSSL, clientBio, clientBio);
+
+        if (SSL_accept(newConnection->cliSSL) < 0){
+          if (!BIO_should_retry(clientBio)) {
+            ERR_print_errors_fp(stderr);
+            close(newsockfd);
+            free(newConnection);
+            continue;
+          }
+        }
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
+        LIST_INSERT_HEAD(&head, newConnection, clients); //need to know that this won't have nickname set first time
+        size++; 
       }
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 
@@ -253,30 +322,43 @@ int main(int argc, char **argv)
         if(FD_ISSET(tempStruct->userSocket, &readset)){ 
           //fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
-          int readRet;
-          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { 
-			      fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
-          }
-          else if (readRet == 0) {
-            //Catches client logging out
-            snprintf(holder, MAX, "%s has logged out.", tempStruct->nickname);
+          int readRet = ssl_nonbio_read(tempStruct->cliSSL, s, MAX);
+          if (readRet == -1) { 
+            /* cant retry on non blocking since we have an error */  
+            snprintf(holder, MAX, "%.990s has logged out.", tempStruct->nickname);
             close(tempStruct->userSocket);
             //SSL_shutdown(tempStruct->cliSSL);
-            //SSL_free(tempStruct->cliSSL); 
+            SSL_free(tempStruct->cliSSL); 
             LIST_REMOVE(tempStruct, clients);
             free(tempStruct);
             size--;
             //NOTE: need to make the change to fix the client joining issue
+            //logout here since no retries
             struct connection* sendStruct = LIST_FIRST(&head);
             LIST_FOREACH(sendStruct, &head, clients){
               if (sendStruct->nicknameFlag == 1){
-                SSL_write(sendStruct->userSocket, holder, MAX);
+                int wRet = ssl_nonbio_write(sendStruct->cliSSL, holder, MAX);
+                if (wRet == -1) {
+                  // Non-retryable write error; treat like disconnect
+                  close(sendStruct->userSocket);
+                  SSL_free(sendStruct->cliSSL);
+                  LIST_REMOVE(sendStruct, clients);
+                  free(sendStruct);
+                  size--;
+                }
               }
             }
+          }
+          else if(readRet == 0){
+            //retryable read don't have to do anything. 
+            tempStruct = LIST_NEXT(tempStruct, clients);
+            continue; 
           }
           /* Generate an appropriate reply */
           //fprintf(stdout, "Before switch statement. readRet: %d\n", readRet);
           else if (readRet > 0) { //checks if the client actually said something
+            struct connection *nameStruct; 
+            int wRet; 
             //int holder;
             //fprintf(stdout, "Right before switch statement\n");
 		        switch(s[0]) { /* based on the first character of the client's message */
@@ -285,7 +367,7 @@ int main(int argc, char **argv)
               case '1': 
                 //code to register name
                 //fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->nickname);
-                struct connection* nameStruct = LIST_FIRST(&head);
+                nameStruct = LIST_FIRST(&head);
                 while (nameStruct != NULL){
                   if (strncmp(nameStruct->nickname, &s[1], MAX) == 0){
                     nameFlag = 0;
@@ -297,7 +379,7 @@ int main(int argc, char **argv)
                   snprintf(tempStruct->nickname, MAX, "%s", &s[1]);
                   tempStruct->nicknameFlag = 1;
                   if(size > 1) {
-                    snprintf(holder, MAX, "%s has joined the chat.", tempStruct->nickname);
+                    snprintf(holder, MAX, "%.900s has joined the chat.", tempStruct->nickname);
                   }
                   else{
                     snprintf(holder, MAX, "You are the first user in this chat.");
@@ -305,17 +387,23 @@ int main(int argc, char **argv)
                 }
                 else { //if someone else already has name
                   snprintf(holder, MAX, "1"); 
-                  SSL_write(tempStruct->userSocket, holder, MAX);
-                }
+                  wRet = ssl_nonbio_write(tempStruct->cliSSL, holder, MAX); 
+                  if (wRet == -1){
+                    close(tempStruct->userSocket); 
+                    SSL_free(tempStruct->cliSSL); 
+                    LIST_REMOVE(tempStruct, clients); 
+                    free(tempStruct); 
+                    size--; 
+                  }
                 break;
               case '2':
                 //code to do regular message stuff
                 //fprintf(stdout, "Test statement: Caught regular message.\n");
-                snprintf(holder, MAX-1, "%s: %s", tempStruct->nickname, &s[1]); 
+                snprintf(holder, MAX-1, "%.500s: %.500s", tempStruct->nickname, &s[1]); 
                 break;
               case '3':
                 //code to exit user
-                //this gets handled in readRed == 0
+                //this gets handled in readRed == -1
                 break;
               default: snprintf(holder, MAX, "Invalid request\n");
             }
@@ -324,7 +412,15 @@ int main(int argc, char **argv)
               struct connection* sendStruct = LIST_FIRST(&head);
               LIST_FOREACH(sendStruct, &head, clients){
                 if(sendStruct->nicknameFlag == 1){
-                  SSL_write(sendStruct->userSocket, holder, MAX);
+                  wRet = ssl_nonbio_write(sendStruct->cliSSL, holder, MAX);
+                  if(wRet == -1){
+                     //disconnect due to non retriable error
+                     close(sendStruct->userSocket); 
+                     SSL_free(sendStruct->cliSSL); 
+                     LIST_REMOVE(sendStruct, clients);
+                     free(sendStruct); 
+                     size--; 
+                  }
                 }
               }
             }
@@ -336,4 +432,5 @@ int main(int argc, char **argv)
     }	
 	//fprintf(stdout, "End of for loop\n");
   }
+ }
 }
