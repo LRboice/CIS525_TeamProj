@@ -204,7 +204,20 @@ int main(int argc, char **argv)
   //switch(argvValOne) 
   //{ //NOTE: double check these values are correct with underscores and such. Lucas can't remember
   //the correct values and I don't know where to check - Aidan
-  // Names and cert file names are corrected - lucas
+  //
+  // Names and cert file subjs are corrected. 
+  // I am gonna put them in this note tho too.
+  // FOR KSU CHATS:
+  //    > "ksuFootball..." for this server name
+  //    > "ksucis..." for the other server name
+  // FOR DIRECTORY SERVER CA:
+  //    > "Directory Server" 
+  // FOR ksuCA key certs & subj (if needed):  
+  //    > "KSU Chat CA"
+  //
+  // You can check the names of the keys and certs in 
+  // the directory containing the rest of the project files. 
+  //  - lucas
   if (strncmp("ksuFootball", argvValOne, MAX) == 0)
   {
     SSL_CTX_use_certificate_file(srv_ctx, "ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
