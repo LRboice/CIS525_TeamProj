@@ -218,6 +218,7 @@ int main(int argc, char **argv)
 		  FD_SET(sockfd, &readset);
 		  if (select(sockfd+1, &readset, NULL, NULL, NULL) > 0) 
 		  {
+        fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
 				  fprintf(stdout, "In client read from terminal.\n");

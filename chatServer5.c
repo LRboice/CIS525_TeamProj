@@ -220,7 +220,7 @@ int main(int argc, char **argv)
    
    if (select(maxfd+1, &readset, NULL, NULL, NULL) > 0){
      //fprintf(stdout, "Readset 2: %u\n", readset);
-     //fprintf(stdout, "Right after select statement\n"); 
+     fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
 		  clilen = sizeof(cli_addr);
       if (FD_ISSET(sockfd, &readset)){
@@ -240,8 +240,8 @@ int main(int argc, char **argv)
         newConnection->cliSSL = SSL_new(ctx);
         //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
         SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
-        if (SSL_accept(newConnection->cliSSL) < 0)
-          ERR_print_errors_fp(stderr);
+        if (SSL_accept(newConnection->cliSSL) < 0) //am I not using cliSSL?
+          ERR_print_errors_fp(stderr);// check for handshake completion on client and server
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
       }
       struct connection* tempStruct = LIST_FIRST(&head);
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
           fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
           int readRet;
-          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { 
+          if ((readRet = SSL_read(tempStruct->cliSSL, s, MAX)) < 0) { 
 			      fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
           }
           else if (readRet == 0) {
@@ -271,7 +271,7 @@ int main(int argc, char **argv)
             struct connection* sendStruct = LIST_FIRST(&head);
             LIST_FOREACH(sendStruct, &head, clients){
               if (sendStruct->nicknameFlag == 1){
-                SSL_write(sendStruct->userSocket, holder, MAX);
+                SSL_write(sendStruct->cliSSL, holder, MAX);
               }
             }
           }
@@ -306,7 +306,7 @@ int main(int argc, char **argv)
                 }
                 else { //if someone else already has name
                   snprintf(holder, MAX, "1"); 
-                  SSL_write(tempStruct->userSocket, holder, MAX);
+                  SSL_write(tempStruct->cliSSL, holder, MAX);
                 }
                 break;
               case '2':
