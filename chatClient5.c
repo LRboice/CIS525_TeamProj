@@ -27,11 +27,11 @@ int main(int argc, char **argv)
   char to[MAX], fr[MAX];
   char *tooptr = to, *froptr = fr;
   int readyFlag = 0, n;
-  
+  size_t nwritten;
 
 
 	
-	if (argc == 1) { //handles initial call to directory
+  if (argc == 1) { //handles initial call to directory
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
 	  serv_addr.sin_family			= AF_INET;
 	  serv_addr.sin_addr.s_addr	= inet_addr(DIR_HOST_ADDR);
@@ -118,8 +118,6 @@ int main(int argc, char **argv)
       perror("client: couldn't set new client socket to nonblocking");
       exit(1);
     }
- 
-
 
 	  for(;;) {
 
@@ -136,24 +134,36 @@ int main(int argc, char **argv)
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
 				  //fprintf(stdout, "In client read from terminal.\n");
           //if (1 == scanf(" %[^\n]s", s)) {
-          if ((n = read(0, " %[^\n]s", &(fr[MAX]) - froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
+          // why need a format string? reading not scanning? - sophia
+          
+          // reading input to be written TO the server
+          if ((n = read(0, tooptr, &(to[MAX]) - tooptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
             if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
-          else if (n == 0) {
+          else if (n > 0) { // bytes have been read
+            tooptr += n; // add those bytes to the buffer
+            // if the buffer is full, send the message
+            if(tooptr == &(to[MAX])) {
+              readyFlag = 1; // ready to write 
+              tooptr = to; // reset buffer
+            }
+          
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
-            if (userFlag == 0) {
+            
+            if (userFlag == 0) { // if the username is not set
               //fprintf(stdout, "In userFlag 0 send branch\n");
-              snprintf(holder, MAX, "1%s", s);
-              write(sockfd, holder, MAX);
-              userFlag = 1;
+              snprintf(tooptr, MAX, "1%s", to); // add to buffer with 1 at the beginning
+              //write(sockfd, holder, MAX);
+              userFlag = 1; // username now set
             }
-            else {
-              //catches regular message
+            else { //catches regular message
+              
               //fprintf(stdout, "In userFlag 2 send branch\n");
-              snprintf(holder, MAX, "2%s", s);
-              write(sockfd, holder, MAX);
+              snprintf(tooptr, MAX, "2%s", to); // add to buffer with 2 at the beginning 
+              //write(sockfd, holder, MAX);
             }
+            //write(sockfd, holder, MAX); // write the buffer 
 				  } 
           else {
 					  printf("Error reading or parsing user input\n");
@@ -162,23 +172,28 @@ int main(int argc, char **argv)
 			  /* Check whether there's a message from the server to read */
 			  if (FD_ISSET(sockfd, &readset)) { 
 				  //fprintf(stdout, "In client read from server.\n");
-          if ((nread = read(sockfd, s, MAX)) < 0) { 
+          // reading FROM the server
+          if ((nread = read(sockfd, froptr, &(fr[MAX]) - froptr)) < 0) { 
 					  fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
-            if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
-              fprintf(stdout, "Username already taken. Try again!\n");
-              //fprintf(stdout, "In userFlag 1 recieve branch\n");
-              userFlag = 0;
+            froptr += nread;
+            if(froptr == &(fr[MAX])) { // if the buffer is full
+              froptr = fr; // reset pointer
+              
+              if(userFlag == 1 && strncmp(&fr[0], "1", MAX) == 0){
+                fprintf(stdout, "Username already taken. Try again!\n");
+                //fprintf(stdout, "In userFlag 1 recieve branch\n");
+                userFlag = 0;
+              }
+              else {
+                //fprintf(stdout, "In userFlag 2 recieve branch\n");
+                userFlag = 2;
+                char printer[MAX];
+                snprintf(printer, MAX, "Read from server: %s\n", fr);
+                printf("%s", printer);
+              }
             }
-            else {
-              //fprintf(stdout, "In userFlag 2 recieve branch\n");
-              userFlag = 2;
-              char printer[MAX];
-              snprintf(printer, MAX, "Read from server: %s\n", s);
-              printf("%s", printer);
-            }
-					
 				  }
           else {
             fprintf(stdout, "Server closed\n");
@@ -186,16 +201,41 @@ int main(int argc, char **argv)
             exit(0);
           }
 			  }
-		  }
-	  }
-	  close(sockfd);
-    exit(0);
+        if(FD_ISSET(sockfd, &writeset)) {
+          //fprintf(stdout, "In client write to server.\n");
+          size_t pending = tooptr - to; // pending bytes to write
+          if (pending > 0) {
+            nwritten = write(sockfd, to, MAX);
+            if(nwritten < 0) {
+              if(errno != EWOULDBLOCK) {
+                perror("server: write error on socket");
+                // exit ?
+              }
+            }
+            else if(nwritten > 0) {
+              if(nwritten >= pending) { // everything was written
+                tooptr = to; // reset pointer
+                memset(to, 0, MAX); // clear buffer
+                readyFlag = 0;
+              }
+              else {
+                int remaining = pending - nwritten;
+                for(int i = 0; i < remaining; i++) {
+                  to[i] = to[nwritten + i]; // move unwritten bytes to the front
+                }
+                tooptr = to + nwritten; // update pointer
+              }
+            }
+            //readyFlag = 0;
+          }
+		    }
+      }
+      close(sockfd);
+      exit(0);
+    }
   }
   else {
     perror("Error: Invalid number of arguments.");
     exit(1);
   }
 }
-
-
-
