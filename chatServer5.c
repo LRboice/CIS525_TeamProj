@@ -40,11 +40,11 @@ int main(int argc, char **argv)
   int         argvValTwo;
   struct listhead head;
   
-  if (sscanf(argv[1], "%s", argvValOne) < 0) {
-    perror("Unable to parse name.");
+  if (sscanf(argv[1], "%s", argvValOne) < 1) {
+    perror("Unable to parse name."); //don't need to copy to string
     exit(1);
   }
-  if (sscanf(argv[2], "%d", &argvValTwo) < 0) {
+  if (sscanf(argv[2], "%d", &argvValTwo) < 1) {
     perror("Unable to parse port.");
     exit(1);
   }
@@ -65,7 +65,8 @@ int main(int argc, char **argv)
   
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  SSL_METHOD *method = SSLv23_client_method();
+  //SSL_METHOD *method = SSLv23_client_method();
+  SSL_METHOD *method = TLS_client_method();
   SSL_CTX *ctx = SSL_CTX_new(method);
 
 
@@ -139,7 +140,8 @@ int main(int argc, char **argv)
 
   /* Setting up SSL server stuff. Copied from Copied from the Linux socket programming chapter 16*/
 
-  method = SSLv23_server_method(); //I shouldn't need to copy anything else over bc it was loaded earlier - Aidan
+  //method = SSLv23_server_method(); //I shouldn't need to copy anything else over bc it was loaded earlier - Aidan
+  method = TLS_server_method();
   ctx = SSL_CTX_new(method);
   //creating a switch statement based on what server name is to use proper key/cert files
   //NOTE: this may need to go above the directory check statement
@@ -195,7 +197,7 @@ int main(int argc, char **argv)
 
 	listen(sockfd, 5);
  
-  
+  SSL_set_accept_state(ssl); //god I hope this fixes is - Aidan
 
 	for (;;) {
    //fprintf(stdout, "Top of for loop\n");
@@ -240,9 +242,11 @@ int main(int argc, char **argv)
         newConnection->cliSSL = SSL_new(ctx);
         //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
         SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
-        if (SSL_accept(newConnection->cliSSL) < 0) //am I not using cliSSL?
+        int x;
+        if ((x = SSL_accept(newConnection->cliSSL)) < 0) //am I not using cliSSL?
           ERR_print_errors_fp(stderr);// check for handshake completion on client and server
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
+        fprintf(stdout, "Return value of SSL_accept: %d\n", x);
       }
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 

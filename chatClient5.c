@@ -184,9 +184,11 @@ int main(int argc, char **argv)
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
     SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
-    if (SSL_connect(ssl) == -1 ) {     /* perform the connection */
+    int x;
+    if ((x = SSL_connect(ssl)) == -1 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
     }
+    fprintf(stdout, "Return value of SSL_accept: %d\n", x);
 
     /************************************************************/
     /*** Checking certificates                                ***/
@@ -210,6 +212,9 @@ int main(int argc, char **argv)
       close(sockfd);
       exit(1);
     }
+    
+    //fprintf(stdout, "Before for loop, testing rfd/wfd of ssl vs socket.\n");
+    //fprintf(stdout, "sockfd: %d. get_rfd: %d. get_wfd: %d.\n", sockfd, SSL_get_rfd(ssl), SSL_get_wfd(ssl));
 
 	  for(;;) {
 
