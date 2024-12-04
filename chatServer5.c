@@ -61,7 +61,7 @@ int main(int argc, char **argv)
   Copied from the Linux socket programming chapter 16 */
   //might need an include statement up top - Aidan
   //SSL_library_init(); I'm pretty sure this is automatically done - Aidan
- ;
+ 
   
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
