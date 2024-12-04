@@ -28,7 +28,7 @@ CFLAGS	+= -ggdb3
 LIBS	= -lcrypto -lssl
 all:	tls
 
-chat2:	$(EXECUTABLES)
+tls:	$(EXECUTABLES)
 
 
 chatClient5: chatClient5.c $(DEPS)
