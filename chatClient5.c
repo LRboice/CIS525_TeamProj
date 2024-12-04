@@ -7,12 +7,12 @@
 #include "inet.h"
 #include "common.h"
 #include <openssl/ssl.h>
-
+#include <openssl/bio.h>
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
   TODO: have the client have different functionality based on different argc input
 */
-
+int ssl_BIO *create_bio_sock()
 int main(int argc, char **argv)
 {
 	char s[MAX] = {'\0'}; 
@@ -73,9 +73,17 @@ int main(int argc, char **argv)
     /*** Establish SSL protocol and create encryption link    ***/
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
-    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
+    BIO *bio = BIO_new_socket(sockfd, BIO_NOCLOSE); /*create a new BIO with no close tag set*/
+    if(bio == NULL){
+      perror("client: BIO_new_socket failed"); 
+      exit(1);
+    }
+    BIO_set_flags(bio, BIO_FLAGS_NONBLOCK); /*make it non blocking */
+    SSL_set_bio(ssl, bio, bio);/*set bio for ssl con*/ 
+    
     if (SSL_connect(ssl) <= 0 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
+      exit(1); 
     }
 
 
@@ -92,12 +100,14 @@ int main(int argc, char **argv)
           fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
           X509_free(cert);
           SSL_free(ssl);
+          BIO_free(bio); 
           close(sockfd);
           exit(1);
       }
     } else {
-      printf("No certificates.\n");
+      perror("No certificates.\n");
       SSL_free(ssl);
+      BIO_free(bio); 
       close(sockfd);
       exit(1);
     }
@@ -124,7 +134,7 @@ int main(int argc, char **argv)
         //fprintf(stdout, "In read from Directory branch\n");
         while(nread > 0){
             snprintf(holder, MAX, "Read from server: %s\n", s);
-            printf("%s", holder);
+            fprintf("%s", holder);
             nread = SSL_read(ssl, s, MAX);
         }
         close(sockfd);
@@ -135,6 +145,11 @@ int main(int argc, char **argv)
       close(sockfd);
       exit(0);
     }
+    SSL_free(ssl);  /*free it all up end of directory server calls*/
+    BIO_free(bio); 
+    close(sockfd); 
+    SSL_CTX_free(ctx); 
+    exit(0); 
   } 
   else if (argc == 4) { //handles connection to server Usage: <address> <port> <chatroom name>
     if (sscanf(argv[1], "%s", argvValOne) < 0) {
@@ -182,7 +197,14 @@ int main(int argc, char **argv)
     /*** Establish SSL protocol and create encryption link    ***/
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
-    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
+    BIO *bio = BIO_new_socket(sockfd, BIO_NOCLOSE); 
+    if(bio == NULL){
+      perror("client: BIO_new_socket failed"); 
+      exit(1); 
+    }
+    BIO_set_flags(bio, BIO_FLAGS_NONBLOCK); 
+    SSL_set_bio(ssl, bio, bio); 
+
     if (SSL_connect(ssl) == -1 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
     }
@@ -206,6 +228,7 @@ int main(int argc, char **argv)
     } else {
       printf("No certificates.\n");
       SSL_free(ssl);
+      BIO_free(bio); 
       close(sockfd);
       exit(1);
     }
@@ -257,23 +280,26 @@ int main(int argc, char **argv)
               userFlag = 2;
               char printer[MAX];
               snprintf(printer, MAX, "Read from server: %s\n", s);
-              printf("%s", printer);
+              fprintf("%s", printer);
             }
 					
 				  }
           else {
             fprintf(stdout, "Server closed\n");
-            SSL_free(ssl);
+            SSL_free(ssl); /*wrap up mem here */
+            BIO_free(bio); 
             close(sockfd);
             SSL_CTX_free(ctx);
             exit(0);
           }
 			  }
 		  }
-	  }
+	  } /*all done lets get outta here */
     SSL_free(ssl);
-	  close(sockfd);
+	  BIO_free(bio);
+    close(sockfd);
     SSL_CTX_free(ctx);
+    
     exit(0);
   }
   else {
