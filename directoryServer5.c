@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include "inet.h"
 #include "common.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 
 /*
   NOTE: this is all copied from the server1. If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -22,6 +25,7 @@ struct connection {
   struct in_addr conIP; //I don't think I can keep this as a string. Need to do this as a in_addr
   int conPort;
   LIST_ENTRY(connection) servers;
+  SSL *sslState;
 };
 
 LIST_HEAD(listhead, connection);
@@ -33,11 +37,35 @@ int main(int argc, char **argv)
 	struct sockaddr_in con_addr, dir_addr;
 	char				s[MAX];
   struct listhead head;
-  
+
+  /************************************************************/
+  /*** Initialize Server SSL state                          ***/
+  /************************************************************/
+
+  // OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */
+ // SSL_load_error_strings();        /* Load/register error msg */
+
+ 
+  SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
+ 
+
+  /************************************************************/
+  /*** Load certificate and private key files               ***/
+  /************************************************************/
+  /* set the local certificate from CertFile */
+  SSL_CTX_use_certificate_file(ctx, "directory_server.crt", SSL_FILETYPE_PEM);
+  /* set private key from KeyFile */
+  SSL_CTX_use_PrivateKey_file(ctx, "directory_server.key", SSL_FILETYPE_PEM);
+  /* verify private key */
+  if ( !SSL_CTX_check_private_key(ctx) )
+    fprintf(stderr, "Key & certificate don't match");
  
   LIST_INIT(&head);
  
   fd_set readset;
+
+
+  
 
 	/* Create communication endpoint */
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -100,6 +128,15 @@ int main(int argc, char **argv)
 			    perror("directory: accept error");
           continue;
 		    }
+          /************************************************************/
+          /*** Create SSL session state based on context & SSL_accept */
+          /************************************************************/
+          SSL *  ssl = SSL_new(ctx);       /* get new SSL state with context */
+          SSL_set_fd(ssl, newsockfd); /* associate socket with SSL state */
+          if ( SSL_accept(ssl) <1 )    /* do SSL-protocol accept */{
+            ERR_print_errors_fp(stderr);
+            continue;
+          }
         fprintf(stdout, "Right before add to list\n");
         struct connection* newConnection = malloc(1*sizeof(struct connection));
         newConnection->conSocket = newsockfd;
@@ -107,6 +144,7 @@ int main(int argc, char **argv)
         newConnection->servNameFlag = 0;
         newConnection->conIP = con_addr.sin_addr; //note: Might need to copy the memset in line 55 to properly allocate space for this
         //newConnection->conIP.sin_port = con_addr.sin_port; //note: I'm pretty sure this is the port it binds on the directory end, not what clients could use to connect
+        newConnection->sslState = ssl;
         LIST_INSERT_HEAD(&head, newConnection, servers); //need to know that this won't have servName set first time
         size++;
         //fprintf(stdout, "Inserted into head. conSocket val: %d\n", newConnection->conSocket);
@@ -121,7 +159,11 @@ int main(int argc, char **argv)
           //fprintf(stdout, "In if fd_isset\n");
           int readRet;
           int nameFlag = 1;
-          if ((readRet = read(tempStruct->conSocket, s, MAX)) < 0) { 
+
+       
+          
+          // if ((readRet = read(tempStruct->conSocket, s, MAX)) < 0) 
+          if ((readRet = SSL_read(tempStruct->sslState, s, MAX)) < 0){ 
 			      fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
           }
           else if (readRet == 0) {
@@ -177,7 +219,8 @@ int main(int argc, char **argv)
                   tempStruct->conIP = con_addr.sin_addr; //conIP.sin_addr might not be the right way to get the address
                   //snprintf(holder, MAX, "0%s", tempStruct->conIP);
                   snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP));
-                  write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
+                  // write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
+                  SSL_write(tempStruct->sslState, holder, MAX); 
                   /*if(size > 1) {
                     snprintf(holder, MAX, "%s has joined the chat.", tempStruct->servName);
                   }
@@ -187,7 +230,8 @@ int main(int argc, char **argv)
                 }
                 else { //if someone else already has name
                   snprintf(holder, MAX, "1"); 
-                  write(tempStruct->conSocket, holder, MAX);
+                  // write(tempStruct->conSocket, holder, MAX);
+                  SSL_write(tempStruct->sslState, holder, MAX); 
                 }
                 break;
               case '2':
@@ -196,7 +240,8 @@ int main(int argc, char **argv)
                 //snprintf(holder, MAX-1, "%s: %s", tempStruct->servName, &s[1]);
                 fprintf(stdout, "In printing to client.\n");
                 snprintf(holder, MAX, "List of available servers:\n");
-                write(tempStruct->conSocket, holder, MAX);
+                // write(tempStruct->conSocket, holder, MAX);
+                SSL_write(tempStruct->sslState, holder, MAX); 
                 //if (nameFlag == 1){
                   fprintf(stdout, "If list is empty: %d\n", LIST_EMPTY(&head));
                   struct connection* sendStruct = LIST_FIRST(&head);
@@ -205,13 +250,16 @@ int main(int argc, char **argv)
                       if(sendStruct->servNameFlag == 1){
                         snprintf(holder, MAX, "%s", sendStruct->servName);
                         fprintf(stdout, "First server name: %s\n", sendStruct->servName);
-                        write(tempStruct->conSocket, holder, MAX);
+                        // write(tempStruct->conSocket, holder, MAX);
+                        SSL_write(tempStruct->sslState, holder, MAX); 
                         snprintf(holder, MAX, "%s", inet_ntoa(sendStruct->conIP));
                         fprintf(stdout, "First server IP: %s\n", inet_ntoa(sendStruct->conIP));
-                        write(tempStruct->conSocket, holder, MAX); //need to send this as a string
+                        // write(tempStruct->conSocket, holder, MAX); //need to send this as a string
+                        SSL_write(tempStruct->sslState, holder, MAX); 
                         snprintf(holder, MAX, "%d", sendStruct->conPort);
                         fprintf(stdout, "First server port: %d\n", sendStruct->conPort);
-                        write(tempStruct->conSocket, holder, MAX);
+                        // write(tempStruct->conSocket, holder, MAX);
+                        SSL_write(tempStruct->sslState, holder, MAX); 
                         fprintf(stdout, "Has printed to client.\n");
                         // sendStruct->conIP, sendStruct->conPort, 
                       }
@@ -247,3 +295,5 @@ int main(int argc, char **argv)
 	//fprintf(stdout, "End of for loop\n");
   }
 }
+
+
