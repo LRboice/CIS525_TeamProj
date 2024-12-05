@@ -109,10 +109,7 @@ int main(int argc, char **argv)
       exit(1);
     }
 
-    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
-      perror("client: couldn't set new client socket to nonblocking");
-      exit(1);
-    }
+
     snprintf(holder, MAX, "2");
 
     //write(sockfd, holder, MAX); 
@@ -237,6 +234,11 @@ int main(int argc, char **argv)
       printf("No certificates.\n");
       SSL_free(ssl);
       close(sockfd);
+      exit(1);
+    }
+
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
+      perror("client: couldn't set new client socket to nonblocking");
       exit(1);
     }
     
