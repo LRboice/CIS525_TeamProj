@@ -28,19 +28,15 @@ CFLAGS	+= -ggdb3
 LIBS	= -lcrypto -lssl
 all:	tls
 
-# Uncomment the LIBS line below containing the library that you're using
-#LIBS	= -lcrypto -lgnutls
-#LIBS	= -lcrypto -lssl
-
-all:	tls
-
 tls:	$(EXECUTABLES)
 
 
 chatClient5: chatClient5.c $(DEPS)
 	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
+	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
 
 chatServer5: chatServer5.c $(DEPS)
+	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
 	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
 
 directoryServer5: directoryServer5.c $(DEPS)

@@ -29,7 +29,16 @@ struct connection {
   int readyFlag;
   LIST_ENTRY(connection) servers;
   SSL *sslState;
+  char write[MAX];
+  char read[MAX];
+  char *writeptr, *readptr;
+
 };
+//make the sockets non blocking
+//set up the writeset
+//if read, read in to np->read
+//replace writes with snprintf to the writeptr, and add the linked list to the writeset
+//have a seperate for loop where you ckheck if writeset is ready
 
 LIST_HEAD(listhead, connection);
 
@@ -67,7 +76,13 @@ int main(int argc, char **argv)
   LIST_INIT(&head);
  
   fd_set readset;
+
+  /**********  adding writeset */
   fd_set writeset;
+  FD_ZERO(&writeset);
+
+
+  
 
 	/* Create communication endpoint */
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -105,6 +120,7 @@ int main(int argc, char **argv)
    FD_ZERO(&writeset);
    //loop through servers using linked list and add them to the FD_SET
    struct connection* loopStruct = LIST_FIRST(&head); 
+   struct connection * np;
    LIST_FOREACH(loopStruct, &head, servers) {
      
      FD_SET(loopStruct->conSocket, &readset);
@@ -116,13 +132,19 @@ int main(int argc, char **argv)
      }
      //fprintf(stdout, "In adding loop. Current is %d\n", loopStruct->conSocket);
    }
-   
+
+   /**************** resset writeset */
+
+        //fd_set writesetcopy; //Writeset is already reset - Aidan
+        //writesetcopy = writeset;
+  
    
 
    //fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
    if ((n = select(maxfd+1, &readset, &writeset, NULL, NULL)) > 0){
+   //if (select(maxfd+1, &readset,&writesetcopy, NULL, NULL) > 0){
      //fprintf(stdout, "Readset 2: %u\n", readset);
      //fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
@@ -144,7 +166,7 @@ int main(int argc, char **argv)
             ERR_print_errors_fp(stderr);
             continue;
           }
-        if (fcntl(newsockfd, F_SETFL< O_NONBLOCK) != 0){
+        if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) != 0){
           perror("server: couldn't set new client socket to nonblocking");
           exit(1);
         }
@@ -158,7 +180,16 @@ int main(int argc, char **argv)
         newConnection->froptr = newConnection->fr;
         newConnection->conIP = con_addr.sin_addr; //note: Might need to copy the memset in line 55 to properly allocate space for this
         //newConnection->conIP.sin_port = con_addr.sin_port; //note: I'm pretty sure this is the port it binds on the directory end, not what clients could use to connect
+       
+
+
+       /********* set up linkedlist fields*************/
         newConnection->sslState = ssl;
+        newConnection->writeptr = newConnection->write;
+        newConnection->readptr = newConnection->read;
+
+
+
         LIST_INSERT_HEAD(&head, newConnection, servers); //need to know that this won't have servName set first time
         //size++;
         //fprintf(stdout, "Inserted into head. conSocket val: %d\n", newConnection->conSocket);
@@ -176,9 +207,13 @@ int main(int argc, char **argv)
 
        
           
-          // if ((n = read(tempStruct->conSocket, tempStruct->froptr, &(tempStruct->fr[MAX]) - tempStruct->froptr)) < 0) 
-          if ((n = SSL_read(tempStruct->sslState, s, MAX)) < 0){ 
-			      if (errno != EWOULDBLOCK) { perror("read error on socket"); }
+          // if ((readRet = read(tempStruct->conSocket, s, MAX)) < 0) 
+
+          /*********************************** read using ssl */
+          if ((n = SSL_read(tempStruct->sslState, tempStruct->readptr, &(tempStruct->read[MAX]) - tempStruct->readptr)) < 0){ 
+			      if(errno!= EWOULDBLOCK){perror("read error on socket\n");}
+
+            fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
           }
           else if (n == 0) {
             //Catches client/server logging out. With the exception of freeing memory this should be good
@@ -230,6 +265,13 @@ int main(int argc, char **argv)
                     //snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //need to figure out something to do with these lines
                     //// write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
                   SSL_write(tempStruct->sslState, holder, MAX); 
+
+                  /*************** write to the buffer instead ************************/
+                 // SSL_write(tempStruct->sslState, holder, MAX); 
+                  /*tempStruct->writeptr = tempStruct->write;
+                  snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                  FD_SET(tempStruct->conSocket,&writeset);*/ //this is the stuff Tatenda did, will need reworked
+                  //to fit with git merges - Aidan
                   } 
                   else{
                     snprintf(tempStruct->to, MAX, "1");
@@ -237,6 +279,10 @@ int main(int argc, char **argv)
                     //snprintf(holder, MAX, "1");  //will need to handle something here
                   //   //write(tempStruct->conSocket, holder, MAX);
                   SSL_write(tempStruct->sslState, holder, MAX); 
+                  /****************************************** non blocking */
+                  /*tempStruct->writeptr = tempStruct->write;
+                  snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                  FD_SET(tempStruct->conSocket,&writeset);*/ //same git merge jank as before - Aidan
                   }
                   break;
                 case '2':
@@ -246,6 +292,11 @@ int main(int argc, char **argv)
                 SSL_write(tempStruct->sslState, holder, MAX); //is ssl state socket?
                   //if (nameFlag == 1){
                   //fprintf(stdout, "If list is empty: %d\n", LIST_EMPTY(&head));
+                  /****************************************** non blocking */
+                //SSL_write(tempStruct->sslState, holder, MAX); 
+                  /*tempStruct->writeptr = tempStruct->write;
+                  snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                  tempStruct->writeptr += strlen(holder);*/ //Tatenda's version is correct here, git merge is still jank-Aidan
                   struct connection* sendStruct = LIST_FIRST(&head);
                   //fprintf(stdout, "")
                     LIST_FOREACH(sendStruct, &head, servers){
@@ -253,31 +304,53 @@ int main(int argc, char **argv)
                         snprintf(holder, MAX, "%s", sendStruct->servName);
                         fprintf(stdout, "First server name: %s\n", sendStruct->servName);
                         // write(tempStruct->conSocket, holder, MAX);
-                        SSL_write(tempStruct->sslState, holder, MAX); 
+                        /****************************************** non blocking */
+
+
+                        //SSL_write(tempStruct->sslState, holder, MAX); 
+                        snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                        tempStruct->writeptr += strlen(holder);
+
+
                         snprintf(holder, MAX, "%s", inet_ntoa(sendStruct->conIP));
                         fprintf(stdout, "First server IP: %s\n", inet_ntoa(sendStruct->conIP));
                         // write(tempStruct->conSocket, holder, MAX); //need to send this as a string
-                        SSL_write(tempStruct->sslState, holder, MAX); 
+                        //SSL_write(tempStruct->sslState, holder, MAX); 
+
+                        snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                        tempStruct->writeptr += strlen(holder);
+
+
+
                         snprintf(holder, MAX, "%d", sendStruct->conPort);
                         fprintf(stdout, "First server port: %d\n", sendStruct->conPort);
                         // write(tempStruct->conSocket, holder, MAX);
-                        SSL_write(tempStruct->sslState, holder, MAX); 
+                       // SSL_write(tempStruct->sslState, holder, MAX); 
+
+                         snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                        tempStruct->writeptr += strlen(holder);
+                        FD_SET(tempStruct->conSocket,&writeset);
+
+
                         fprintf(stdout, "Has printed to client.\n");
+
+
                         // sendStruct->conIP, sendStruct->conPort, 
                       }
                   }
-                  //}
-                  close(tempStruct->conSocket); 
-                  LIST_REMOVE(tempStruct, servers);
-                  free(tempStruct); //might need to free the inner struct memory
-                  //size--;
-                  //fprintf(stdout, "End of client print.\n");
-                  break;
-                default: //snprintf(holder, MAX, "Invalid request\n");
-                  
-                  //fprintf(stdout, "Server name recieved: %s\n", tempStruct->servName);
-                  //fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);
-              }
+                //}
+                /*******************   */
+                // close(tempStruct->conSocket); 
+                // LIST_REMOVE(tempStruct, servers);
+                // free(tempStruct); //might need to free the inner struct memory
+                // size--;
+                // fprintf(stdout, "End of client print.\n");
+                // break;
+              case '3':
+                //code to exit user
+                //this gets handled in readRed == 0
+                break;
+              default: snprintf(holder, MAX, "Invalid request\n");
             }
             //fprintf(stdout, "End if switch statement\n");
             /*if (nameFlag == 1){
@@ -311,6 +384,37 @@ int main(int argc, char **argv)
         tempStruct = LIST_NEXT(tempStruct, servers);
       //fprintf(stdout, "End of while loop\n");
       } 
+
+
+      /*************************  */
+            LIST_FOREACH(np, &head, servers){
+
+                    if(FD_ISSET(np->conSocket, &writesetcopy) && (*(np->write) != '\0'))
+                    {
+                        fprintf(stderr,"ready to write\n");
+                        int nwritten;       
+                        //SSL_write(tempStruct->sslState, holder, MAX);            
+                        if ((nwritten = SSL_write(np->sslState, np->writeptr,MAX) < 0)) {
+                        if (errno != EWOULDBLOCK) { perror("write error on socket"); }
+                        }
+                        else {
+                            np->writeptr += nwritten; /* bytes just written */
+                            fprintf(stderr,"just wrote %d bytes\n",nwritten);
+                        if (&(np->write[MAX]) == np->writeptr) {
+                            np->writeptr = np->write;
+                            FD_CLR(np->conSocket,&writeset);
+                            memset(np->write, '\0', MAX);
+
+                        }
+                        }
+                        
+                      
+                    }
+                }
+
+
+
+
     }	
 	//fprintf(stdout, "End of for loop\n");
   }
