@@ -185,10 +185,7 @@ int main(int argc, char **argv)
 		  exit(1);
 	  }
 
-    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
-      perror("client: couldn't set new client socket to nonblocking");
-      exit(1);
-    }
+
 
     /************************************************************/
     /*** Establish SSL protocol and create encryption link    ***/
