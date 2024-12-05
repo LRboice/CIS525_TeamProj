@@ -268,7 +268,7 @@ int main(int argc, char **argv)
           fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
           int readRet;
-          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { 
+          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { //this line is wrong - Aidan  
 			      if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
           else if (readRet == 0) {

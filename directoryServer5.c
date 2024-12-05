@@ -176,8 +176,8 @@ int main(int argc, char **argv)
         newConnection->servName[0] = '\0';
         newConnection->servNameFlag = 0;
         newConnection->readyFlag = 0;
-        newConnection->tooptr = newConnection->to;
-        newConnection->froptr = newConnection->fr;
+        //newConnection->tooptr = newConnection->to;
+        //newConnection->froptr = newConnection->fr;
         newConnection->conIP = con_addr.sin_addr; //note: Might need to copy the memset in line 55 to properly allocate space for this
         //newConnection->conIP.sin_port = con_addr.sin_port; //note: I'm pretty sure this is the port it binds on the directory end, not what clients could use to connect
        
@@ -240,16 +240,16 @@ int main(int argc, char **argv)
             /* sscanf(&s[1], "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer.
                 fprintf(stdout, "Server name recieved: %s\n", tempStruct->servName);
                 fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);*/
-            tempStruct->froptr += n;
-            if (&(tempStruct->fr[MAX]) == tempStruct->froptr){
-              switch(tempStruct->fr[0]){
+            tempStruct->readptr += n;
+            if (&(tempStruct->read[MAX]) == tempStruct->readptr){
+              switch(tempStruct->read[0]){
                 case '1':
                   int nameFlag = 1;
                   struct connection* nameStruct = LIST_FIRST(&head);
                   //int connectedUsers = 0;
                   while (nameStruct != NULL){ //this could probably be a list foreach, but it currently works and I don't want to mess with it
                     if (nameStruct->servNameFlag == 1){
-                      if (strncmp(nameStruct->servName, &(tempStruct->fr[1]), MAX) == 0){
+                      if (strncmp(nameStruct->servName, &(tempStruct->read[1]), MAX) == 0){
                         nameFlag = 0;
                       }
                     }
@@ -257,14 +257,14 @@ int main(int argc, char **argv)
                     nameStruct = LIST_NEXT(nameStruct, servers);
                   }
                   if (nameFlag == 1){
-                    sscanf(&(tempStruct->fr[1]), "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer. Might want it to be snprintf
+                    sscanf(&(tempStruct->read[1]), "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer. Might want it to be snprintf
                     tempStruct->servNameFlag = 1;
                     tempStruct->conIP = con_addr.sin_addr;
                     tempStruct->readyFlag = 1;
                     snprintf(tempStruct->to, MAX, "0%s", inet_ntoa(tempStruct->conIP));
                     //snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //need to figure out something to do with these lines
                     //// write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
-                  SSL_write(tempStruct->sslState, holder, MAX); 
+                  SSL_write(tempStruct->sslState, holder, MAX);  //probably shouldn't write here - Aidan
 
                   /*************** write to the buffer instead ************************/
                  // SSL_write(tempStruct->sslState, holder, MAX); 
@@ -274,11 +274,11 @@ int main(int argc, char **argv)
                   //to fit with git merges - Aidan
                   } 
                   else{
-                    snprintf(tempStruct->to, MAX, "1");
+                    snprintf(tempStruct->write, MAX, "1");
                     tempStruct->readyFlag = 1;
                     //snprintf(holder, MAX, "1");  //will need to handle something here
                   //   //write(tempStruct->conSocket, holder, MAX);
-                  SSL_write(tempStruct->sslState, holder, MAX); 
+                    SSL_write(tempStruct->sslState, holder, MAX); //again, shouldn't write here - Aidan
                   /****************************************** non blocking */
                   /*tempStruct->writeptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
@@ -289,8 +289,8 @@ int main(int argc, char **argv)
                   fprintf(stdout, "In printing to client.\n");
                   snprintf(holder, MAX, "List of available servers:\n");
                   // write(tempStruct->conSocket, holder, MAX);
-                SSL_write(tempStruct->sslState, holder, MAX); //is ssl state socket?
-                  //if (nameFlag == 1){
+                  SSL_write(tempStruct->sslState, holder, MAX); //going to need to rework this to be nonblock
+                  //if (nameFlag == 1){ 
                   //fprintf(stdout, "If list is empty: %d\n", LIST_EMPTY(&head));
                   /****************************************** non blocking */
                 //SSL_write(tempStruct->sslState, holder, MAX); 
@@ -305,6 +305,13 @@ int main(int argc, char **argv)
                         fprintf(stdout, "First server name: %s\n", sendStruct->servName);
                         // write(tempStruct->conSocket, holder, MAX);
                         /****************************************** non blocking */
+                        /*
+                        NOTE: This is going to be a headache to make nonblocking
+                        best idea is as follows: Have a state variable for which part
+                        of the server you are sending and add it to the writeset based
+                        off that. The server will have another variable reading which
+                        server is currently sending.
+                        */ 
 
 
                         //SSL_write(tempStruct->sslState, holder, MAX); 
@@ -346,10 +353,6 @@ int main(int argc, char **argv)
                 // size--;
                 // fprintf(stdout, "End of client print.\n");
                 // break;
-              case '3':
-                //code to exit user
-                //this gets handled in readRed == 0
-                break;
               default: snprintf(holder, MAX, "Invalid request\n");
             }
             //fprintf(stdout, "End if switch statement\n");
@@ -365,17 +368,17 @@ int main(int argc, char **argv)
         }
         else if (FD_ISSET(tempStruct->conSocket, &writeset)){
           int nwritten;
-          if ((nwritten = write(tempStruct->conSocket, tempStruct->tooptr, &(tempStruct->to[MAX]) - tempStruct->tooptr)) < 0) {
+          if ((nwritten = write(tempStruct->conSocket, tempStruct->writeptr, &(tempStruct->write[MAX]) - tempStruct->writeptr)) < 0) {
             if (errno != EWOULDBLOCK) { perror("write error on socket"); }
           }
           else {
               //fprintf(stdout, "in the write block for sock %d\n", tempStruct->userSocket);
               //fprintf(stdout, "nwritten = %d\n", nwritten);
-              tempStruct->tooptr += nwritten;
-              if (&(tempStruct->to[MAX]) == tempStruct->tooptr) {
+              tempStruct->writeptr += nwritten;
+              if (&(tempStruct->write[MAX]) == tempStruct->writeptr) {
                 tempStruct->readyFlag = 0;
-                tempStruct->froptr = tempStruct->fr;
-                tempStruct->tooptr = tempStruct->to;
+                tempStruct->read = tempStruct->readptr;
+                tempStruct->writeptr = tempStruct->writeptr;
                 //fprintf(stdout, "This is after it should get reset\n");
               }
               else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
@@ -387,7 +390,7 @@ int main(int argc, char **argv)
 
 
       /*************************  */
-            LIST_FOREACH(np, &head, servers){
+            /*LIST_FOREACH(np, &head, servers){ //this is Tatenda's write and I don't want to look at it - Aidan
 
                     if(FD_ISSET(np->conSocket, &writesetcopy) && (*(np->write) != '\0'))
                     {
@@ -398,7 +401,7 @@ int main(int argc, char **argv)
                         if (errno != EWOULDBLOCK) { perror("write error on socket"); }
                         }
                         else {
-                            np->writeptr += nwritten; /* bytes just written */
+                            np->writeptr += nwritten;  //bytes just written *
                             fprintf(stderr,"just wrote %d bytes\n",nwritten);
                         if (&(np->write[MAX]) == np->writeptr) {
                             np->writeptr = np->write;
@@ -410,7 +413,7 @@ int main(int argc, char **argv)
                         
                       
                     }
-                }
+                } */
 
 
 
