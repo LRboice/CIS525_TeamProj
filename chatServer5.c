@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "inet.h"
 #include "common.h"
+#include <openssl/ssl.h>
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -21,6 +22,7 @@ struct connection {
   char nickname[MAX], to[MAX], fr[MAX];
   char *tooptr, *froptr; 
   LIST_ENTRY(connection) clients;
+  SSL* cliSSL;
 };
 
 LIST_HEAD(listhead, connection);
@@ -194,7 +196,7 @@ int main(int argc, char **argv)
 
 	listen(sockfd, 5);
  
-  SSL_set_accept_state(ssl); //god I hope this fixes is - Aidan
+  //SSL_set_accept_state(ssl); //god I hope this fixes is - Aidan
 
 	for (;;) {
    //fprintf(stdout, "Top of for loop\n");
@@ -219,16 +221,16 @@ int main(int argc, char **argv)
    
    
 
-   fprintf(stdout, "Right before select statement\n");
+   //fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
    if (n = select(maxfd+1, &readset, &writeset, NULL, NULL) > 0){
      //fprintf(stdout, "Readset 2: %u\n", readset);
-     fprintf(stdout, "Right after select statement\n"); 
+     //fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
 		  clilen = sizeof(cli_addr);
       if (FD_ISSET(sockfd, &readset)){
-        fprintf(stdout, "In the accept statement for socket.\n");
+        //fprintf(stdout, "In the accept statement for socket.\n");
         //fprintf(stdout, "Readset 3: %u\n", readset);;
         int newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
         if (newsockfd <= 0) {
@@ -255,8 +257,10 @@ int main(int argc, char **argv)
         if (x = SSL_accept(newConnection->cliSSL) < 0)
           ERR_print_errors_fp(stderr);
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
-        fprintf(stdout, "Return value of SSL_accept: %d\n", x);
-        SSL_write(newConnection->cliSSL, "2Test message from server.", MAX);
+        //fprintf(stdout, "Return value of SSL_accept: %d\n", x);
+        //SSL_write(newConnection->cliSSL, "2Test message from server.", MAX); //this needs to be nonblock
+        snprintf(newConnection->to, MAX, "2Please enter your username.");//something like this
+        newConnection->readyFlag = 1;
       }
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 
@@ -268,7 +272,7 @@ int main(int argc, char **argv)
           fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
           int readRet;
-          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { //this line is wrong - Aidan  
+          if ((readRet = SSL_read(tempStruct->cliSSL, tempStruct->froptr, &(tempStruct->fr[MAX]) - tempStruct->froptr)) < 0) { 
 			      if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
           else if (readRet == 0) {
@@ -360,7 +364,7 @@ int main(int argc, char **argv)
         else if (FD_ISSET(tempStruct->userSocket, &writeset)){ //this might be else if, might not
           //fprintf(stdout, "in FD_ISSET(write).\n");
           int nwritten;
-          if ((nwritten = write(tempStruct->userSocket, tempStruct->tooptr, &(tempStruct->to[MAX]) - tempStruct->tooptr)) < 0) {
+          if ((nwritten = SSL_write(tempStruct->cliSSL, tempStruct->tooptr, &(tempStruct->to[MAX]) - tempStruct->tooptr)) < 0) { //needs to use SSL
             if (errno != EWOULDBLOCK) { perror("write error on socket"); }
           }
           else {
