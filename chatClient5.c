@@ -259,6 +259,9 @@ int main(int argc, char **argv)
               fprintf(stdout, "In userFlag 1 recieve branch\n");
               userFlag = 0;
             }
+            else if (userFlag == 0){
+              fprintf(stdout, "Welcome to the chat program\n");
+            }
             else {
               fprintf(stdout, "In userFlag 2 recieve branch\n");
               userFlag = 2;

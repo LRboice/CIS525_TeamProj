@@ -40,11 +40,11 @@ int main(int argc, char **argv)
   int         argvValTwo;
   struct listhead head;
   
-  if (sscanf(argv[1], "%s", argvValOne) < 1) {
-    perror("Unable to parse name."); //don't need to copy to string
+  if (sscanf(argv[1], "%s", argvValOne) < 0) {
+    perror("Unable to parse name.");
     exit(1);
   }
-  if (sscanf(argv[2], "%d", &argvValTwo) < 1) {
+  if (sscanf(argv[2], "%d", &argvValTwo) < 0) {
     perror("Unable to parse port.");
     exit(1);
   }
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
   Copied from the Linux socket programming chapter 16 */
   //might need an include statement up top - Aidan
   //SSL_library_init(); I'm pretty sure this is automatically done - Aidan
- 
+ ;
   
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
@@ -247,6 +247,7 @@ int main(int argc, char **argv)
           ERR_print_errors_fp(stderr);// check for handshake completion on client and server
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
         fprintf(stdout, "Return value of SSL_accept: %d\n", x);
+        SSL_write(newConnection->cliSSL, "2Test message from server.", MAX);
       }
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 
@@ -326,10 +327,11 @@ int main(int argc, char **argv)
             }
             fprintf(stdout, "End if switch statement\n");
             if (nameFlag == 1){
+              fprintf(stdout, "In nameFlag == 1 branch\n");
               struct connection* sendStruct = LIST_FIRST(&head);
               LIST_FOREACH(sendStruct, &head, clients){
                 if(sendStruct->nicknameFlag == 1){
-                  SSL_write(sendStruct->userSocket, holder, MAX);
+                  SSL_write(sendStruct->cliSSL, holder, MAX);
                 }
               }
             }
