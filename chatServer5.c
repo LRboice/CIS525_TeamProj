@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include "inet.h"
 #include "common.h"
-#include <openssl/ssl.h>
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -18,8 +17,9 @@
 struct connection {
   int userSocket;
   int nicknameFlag;
-  char nickname[MAX];
-  SSL* cliSSL; //not 100% sure on this generation - Aidan
+  int readyFlag; //1 is ready to read, 0 is not ready
+  char nickname[MAX], to[MAX], fr[MAX];
+  char *tooptr, *froptr; 
   LIST_ENTRY(connection) clients;
 };
 
@@ -31,7 +31,7 @@ int main(int argc, char **argv)
     perror("server: wrong number of arguments.");
     exit(1);
   }
-	int				sockfd, maxfd, size = 0, nread, dirsock;
+	int				sockfd, maxfd, size = 0, nread, dirsock, n, firstFlag = 0;
 	unsigned int	clilen;
 	struct sockaddr_in cli_addr, serv_addr, dir_addr;
 	char				s[MAX];
@@ -56,18 +56,20 @@ int main(int argc, char **argv)
   LIST_INIT(&head);
  
   fd_set readset;
+  fd_set writeset;
 
   /* Initializing SSL Stuff. NOTE: this doesn't do error checking yet 
   Copied from the Linux socket programming chapter 16 */
   //might need an include statement up top - Aidan
   //SSL_library_init(); I'm pretty sure this is automatically done - Aidan
- ;
+ 
   
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
   //SSL_METHOD *method = SSLv23_client_method();
   SSL_METHOD *method = TLS_client_method();
   SSL_CTX *ctx = SSL_CTX_new(method);
+
 
 
   /* Register with directory */
@@ -86,55 +88,50 @@ int main(int argc, char **argv)
 		  perror("server: can't connect to directory");
 		  exit(1);
 	}
-
+  //the connection with the directory has to not hang, the easiest way is to be nonblocking
   /* SSL Stuff Part II. Copied from the Linux socket programming chapter 16
   I don't think I need to change how the socket was generated previously but I could be wrong*/
   SSL *ssl = SSL_new(ctx);
   SSL_set_fd(ssl, dirsock);
   if (SSL_connect(ssl) == -1)
     ERR_print_errors_fp(stderr);
-
-  //char* cipher_name = SSL_get_cipher(ssl); //I don't think this is needed but it's commented out here just in case - Aidan
-
-  /*char line[1024];
-  X509 *x509 = X509_get_subject_name(cert);
-  X509_NAME_oneline(x509, line, sizeof[line]); // Convert it 
-  printf("Subject: %s\ n", line);
-  x509 = X509_get_issuer_name(cert);            // get issuer 
-  X509_NAME_oneline(x509, line, sizeof(line));  // convert it 
-  printf("Issuer: %s\ n", line);*/
-  //I'm not 100% sure how to use this rn, but I'm copying it over for the time being - Aidan
   
-    //fprintf(stdout, "Before write 1 to server.\n");
-    //fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
-        //Note: Will need to write a message to the directory saying that I'm server with 1. If you recieve 1 that means your have the same name as another server
-    snprintf(s, MAX, "1%d %s", argvValTwo, argvValOne);
-    SSL_write(ssl, s, MAX); //might be dirsock here
-    //fprintf(stdout, "After write 1 to server.\n");
-    if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
-		  perror("Error reading from directory\n"); 
-      exit(1);
-	  } 
-    else if (nread > 0) {
-        //fprintf(stdout, "In userFlag 2 recieve branch\n");
- 			  if(strncmp(&s[0], "1", MAX) == 0){
-          perror("Error: server name already taken.\n");
-          exit(1);                    
-        }
-        else{ //you should be good to go if you receive anything else
-          sscanf(&s[1], "%s", addrHolder);
-          //snprintf(addrHolder, MAX, "%s", &s[1]);
-          //inet_addr(addrHolder);
-          //close(dirsock);
-          fprintf(stdout, "Name accepted.\n");
-          //fprintf(stdout, "addrHolder value: %s\n", addrHolder);
-        }
-    }
-    else {
-      fprintf(stdout, "Directory closed\n");
-      close(dirsock);
-      exit(0);
-    }
+  //fprintf(stdout, "Before write 1 to server.\n");
+  //fprintf(stdout, "Value of argvValOne: %s.\n", argvValOne);
+      //Note: Will need to write a message to the directory saying that I'm server with 1. If you recieve 1 that means your have the same name as another server
+
+      //come back to this and make it nonblocking
+  /*int isDone = 1;
+  while (isDone){
+
+  }*/ //NOTE: Ask Eugene if this should be blocking. 
+  snprintf(s, MAX, "1%d %s", argvValTwo, argvValOne);
+  SSL_write(ssl, s, MAX); //might be dirsock here
+  //fprintf(stdout, "After write 1 to server.\n");
+  if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
+    perror("Error reading from directory\n"); 
+    exit(1);
+  } 
+  else if (nread > 0) {
+      //fprintf(stdout, "In userFlag 2 recieve branch\n");
+      if(strncmp(&s[0], "1", MAX) == 0){
+        perror("Error: server name already taken.\n");
+        exit(1);                    
+      }
+      else{ //you should be good to go if you receive anything else
+        sscanf(&s[1], "%s", addrHolder);
+        //snprintf(addrHolder, MAX, "%s", &s[1]);
+        //inet_addr(addrHolder);
+        //close(dirsock);
+        fprintf(stdout, "Name accepted.\n");
+        //fprintf(stdout, "addrHolder value: %s\n", addrHolder);
+      }
+  }
+  else {
+    fprintf(stdout, "Directory closed\n");
+    close(dirsock);
+    exit(0);
+  }
   /* End directory stuff */
   //fprintf(stdout, "End directory stuff.\n");
 
@@ -204,11 +201,16 @@ int main(int argc, char **argv)
    FD_ZERO(&readset);
    FD_SET(sockfd, &readset);
    maxfd = sockfd;
+
+   FD_ZERO(&writeset);
    //loop through clients using linked list and add them to the FD_SET
    struct connection* loopStruct = LIST_FIRST(&head); 
    LIST_FOREACH(loopStruct, &head, clients) {
      
      FD_SET(loopStruct->userSocket, &readset);
+     if (loopStruct->readyFlag == 1) {
+      FD_SET(loopStruct->userSocket, &writeset);
+     }
      if(loopStruct->userSocket > maxfd){
        maxfd = loopStruct->userSocket;
      }
@@ -220,7 +222,7 @@ int main(int argc, char **argv)
    fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
-   if (select(maxfd+1, &readset, NULL, NULL, NULL) > 0){
+   if (n = select(maxfd+1, &readset, &writeset, NULL, NULL) > 0){
      //fprintf(stdout, "Readset 2: %u\n", readset);
      fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
@@ -233,18 +235,25 @@ int main(int argc, char **argv)
 			    perror("server: accept error");
           continue;
 		    }
+        if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) != 0) {
+          perror("server: couldn't set new client to nonblocking");
+          exit(1);
+        }
         struct connection* newConnection = malloc(1*sizeof(struct connection));
         newConnection->userSocket = newsockfd;
         newConnection->nickname[0] = '\0';
         newConnection->nicknameFlag = 0;
+        newConnection->readyFlag = 0;
+        newConnection->tooptr = newConnection->to;
+        newConnection->froptr = newConnection->fr;
         LIST_INSERT_HEAD(&head, newConnection, clients); //need to know that this won't have nickname set first time
         size++;
         newConnection->cliSSL = SSL_new(ctx);
         //It doesn't *look* like a need a new ctx or method, but I'm not 100% sure - Aidan
         SSL_set_fd(newConnection->cliSSL, newConnection->userSocket);
         int x;
-        if ((x = SSL_accept(newConnection->cliSSL)) < 0) //am I not using cliSSL?
-          ERR_print_errors_fp(stderr);// check for handshake completion on client and server
+        if (x = SSL_accept(newConnection->cliSSL) < 0)
+          ERR_print_errors_fp(stderr);
         //fprintf(stdout, "Inserted into head. userSocket val: %d\n", newConnection->userSocket);
         fprintf(stdout, "Return value of SSL_accept: %d\n", x);
         SSL_write(newConnection->cliSSL, "2Test message from server.", MAX);
@@ -259,86 +268,122 @@ int main(int argc, char **argv)
           fprintf(stdout, "In if fd_isset\n");
           int nameFlag = 1;
           int readRet;
-          if ((readRet = SSL_read(tempStruct->cliSSL, s, MAX)) < 0) { 
-			      fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
+          if ((readRet = SSL_read(tempStruct->userSocket, s, MAX)) < 0) { 
+			      if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
           else if (readRet == 0) {
             //Catches client logging out
-            snprintf(holder, MAX, "%s has logged out.", tempStruct->nickname);
-            //NOTE: Logging out causes a seg fault somewhere
+            //snprintf(holder, MAX, "%s has logged out.", tempStruct->nickname);
             close(tempStruct->userSocket);
-            //SSL_shutdown(tempStruct->cliSSL);
-            //SSL_free(tempStruct->cliSSL); 
             LIST_REMOVE(tempStruct, clients);
             free(tempStruct);
-            size--;
+            //size--;
             //NOTE: need to make the change to fix the client joining issue
             struct connection* sendStruct = LIST_FIRST(&head);
             LIST_FOREACH(sendStruct, &head, clients){
               if (sendStruct->nicknameFlag == 1){
-                SSL_write(sendStruct->cliSSL, holder, MAX);
+                snprintf(writeLoop->to, MAX, "%s has logged out", tempStruct->nickname);
+                writeLoop->readyFlag = 1;
               }
             }
+            free(tempStruct);
           }
           /* Generate an appropriate reply */
           //fprintf(stdout, "Before switch statement. readRet: %d\n", readRet);
           else if (readRet > 0) { //checks if the client actually said something
             //int holder;
-            fprintf(stdout, "Right before switch statement\n");
-		        switch(s[0]) { /* based on the first character of the client's message */
+            tempStruct->froptr += n;
+            if (&(tempStruct->fr[MAX]) == tempStruct->froptr) {
+              switch(tempStruct->fr[0]) { // based on the first character of the client's message 
               //logic: Client side chat will apply a '1' on the first message registering the user's name,
               //and a '2' on any further message that isn't a logout.
-              case '1': 
+                case '1': 
                 //code to register name
-                fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->nickname);
-                struct connection* nameStruct = LIST_FIRST(&head);
-                while (nameStruct != NULL){
-                  if (strncmp(nameStruct->nickname, &s[1], MAX) == 0){
-                    nameFlag = 0;
-                    //nameStruct->nicknameFlag = 0;
-                  }
-                  nameStruct = LIST_NEXT(nameStruct, clients);
-                } 
-                if (nameFlag == 1) {
-                  snprintf(tempStruct->nickname, MAX, "%s", &s[1]);
-                  tempStruct->nicknameFlag = 1;
-                  if(size > 1) {
-                    snprintf(holder, MAX, "%s has joined the chat.", tempStruct->nickname);
-                  }
-                  else{
-                    snprintf(holder, MAX, "You are the first user in this chat.");
-                  }
-                }
+                //fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->nickname);
+                int nameFlag = 1;
+                  struct connection* nameStruct = LIST_FIRST(&head);
+                  //int connectedUsers = 0;
+                  while (nameStruct != NULL){ //this could probably be a list foreach, but it currently works and I don't want to mess with it
+                    if (nameStruct->nicknameFlag == 1){
+                      if (strncmp(nameStruct->nickname, &(tempStruct->fr[1]), MAX) == 0){
+                        nameFlag = 0;
+                      }
+                    }
+                  
+                    nameStruct = LIST_NEXT(nameStruct, clients);
+                  } 
+                  if (nameFlag == 1) {
+                    snprintf(tempStruct->nickname, MAX-1, "%s", &(tempStruct->fr[1]));
+                    tempStruct->nicknameFlag = 1;
+                    if (firstFlag == 1){
+                      struct connection* writeLoop = LIST_FIRST(&head); 
+                      LIST_FOREACH(writeLoop, &head, clients) {
+                        if (writeLoop->nicknameFlag == 1){ 
+                          snprintf(writeLoop->to, MAX, "%s has joined the chat.", tempStruct->nickname);
+                          writeLoop->readyFlag = 1;
+                        }
+                      }
+                      //fprintf(stderr, "%s has joined the chat.\n", tempStruct->nickname);
+                    }  //might be extra parenthesis
                 else { //if someone else already has name
-                  snprintf(holder, MAX, "1"); 
-                  SSL_write(tempStruct->cliSSL, holder, MAX);
-                }
+                    snprintf(tempStruct->to, MAX, "1");
+                    tempStruct->readyFlag = 1;
+                    //fprintf(stderr, "1 (someone already has nickname)\n");
+                  }
                 break;
               case '2':
-                //code to do regular message stuff
-                fprintf(stdout, "Test statement: Caught regular message.\n");
-                snprintf(holder, MAX-1, "%s: %s", tempStruct->nickname, &s[1]); 
-                break;
-              case '3':
-                //code to exit user
-                //this gets handled in readRed == 0
-                break;
-              default: snprintf(holder, MAX, "Invalid request\n");
+                  //code to do regular message stuff
+                  //fprintf(stdout, "Test statement: Caught regular message.\n");
+                  struct connection* writeLoop = LIST_FIRST(&head); 
+                  LIST_FOREACH(writeLoop, &head, clients) {
+                    if (writeLoop->nicknameFlag == 1){ 
+                        snprintf(writeLoop->to, MAX, "%s: %s", tempStruct->nickname, &(tempStruct->fr[1]));
+                        writeLoop->readyFlag = 1;
+                    }
+                  }
+                  //fprintf(stderr, "%s\n", &(tempStruct->fr[1]));
+                  break;
+              
+              default: break; //might not be the best idea to bbreak here, oh well//snprintf(holder, MAX, "Invalid request\n");
             }
-            fprintf(stdout, "End if switch statement\n");
-            if (nameFlag == 1){
-              fprintf(stdout, "In nameFlag == 1 branch\n");
+            //fprintf(stdout, "End if switch statement\n");
+            /*if (nameFlag == 1){
               struct connection* sendStruct = LIST_FIRST(&head);
               LIST_FOREACH(sendStruct, &head, clients){
                 if(sendStruct->nicknameFlag == 1){
-                  SSL_write(sendStruct->cliSSL, holder, MAX);
+                  write(sendStruct->userSocket, holder, MAX);
                 }
               }
-            }
+            }*/
+          }
+        }
+        else if (FD_ISSET(tempStruct->userSocket, &writeset)){ //this might be else if, might not
+          //fprintf(stdout, "in FD_ISSET(write).\n");
+          int nwritten;
+          if ((nwritten = write(tempStruct->userSocket, tempStruct->tooptr, &(tempStruct->to[MAX]) - tempStruct->tooptr)) < 0) {
+            if (errno != EWOULDBLOCK) { perror("write error on socket"); }
+          }
+          else {
+              //fprintf(stdout, "in the write block for sock %d\n", tempStruct->userSocket);
+              //fprintf(stdout, "nwritten = %d\n", nwritten);
+              tempStruct->tooptr += nwritten;
+              if (&(tempStruct->to[MAX]) == tempStruct->tooptr) {
+                tempStruct->readyFlag = 0;
+                tempStruct->froptr = tempStruct->fr;
+                tempStruct->tooptr = tempStruct->to;
+                //fprintf(stdout, "This is after it should get reset\n");
+              }
+              else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
           }
         }
       tempStruct = LIST_NEXT(tempStruct, clients);
-      fprintf(stdout, "End of while loop\n");
+      //fprintf(stdout, "End of while loop\n");
+      } 
+    }	
+	//fprintf(stdout, "End of for loop\n");
+        
+      //tempStruct = LIST_NEXT(tempStruct, clients);
+      //fprintf(stdout, "End of while loop\n");
       } 
     }	
 	//fprintf(stdout, "End of for loop\n");

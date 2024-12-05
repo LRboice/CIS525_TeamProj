@@ -17,6 +17,7 @@ int main(int argc, char **argv)
 {
 	char s[MAX] = {'\0'}; 
 	fd_set			readset; 
+  fd_set      writeset;
 	int				sockfd;
 	struct sockaddr_in serv_addr;
 	int				nread;	/* number of characters */
@@ -24,8 +25,11 @@ int main(int argc, char **argv)
   char holder[MAX] = {'\0', '\0'}; //used for concatinating strings with.
   char        argvValOne[MAX];
   int         argvValTwo;
+  char to[MAX], fr[MAX];
+  char *tooptr = to, *froptr = fr;
+  int readyFlag = 0, n;
   
-  /************************************************************/
+/************************************************************/
   /*** Initialize Client SSL state (from Linux Socket Programming chapter 16)   ***/
   /************************************************************/
  
@@ -46,6 +50,7 @@ int main(int argc, char **argv)
     ERR_print_errors_fp(stderr);
     exit(2);
   }*/
+
 	
 	if (argc == 1) { //handles initial call to directory
 
@@ -177,7 +182,11 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to server");
 		  exit(1);
 	  }
-
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
+      perror("client: couldn't set new client socket to nonblocking");
+      exit(1);
+    }
+ 
 
     /************************************************************/
     /*** Establish SSL protocol and create encryption link    ***/
@@ -221,13 +230,20 @@ int main(int argc, char **argv)
 		  FD_ZERO(&readset);
 		  FD_SET(STDIN_FILENO, &readset);
 		  FD_SET(sockfd, &readset);
-		  if (select(sockfd+1, &readset, NULL, NULL, NULL) > 0) 
+      FD_ZERO(&writeset);
+      if(readyFlag) {
+        FD_SET(sockfd, &writeset); //note sure if correct here - Aidan
+      }
+		  if ((n = select(sockfd+1, &readset, &writeset, NULL, NULL)) > 0) 
 		  {
         fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
-				  fprintf(stdout, "In client read from terminal.\n");
-          if (1 == scanf(" %[^\n]s", s)) {
+				  //fprintf(stdout, "In client read from terminal.\n");
+          if ((n = read(0, " %[^\n]s", &(fr[MAX]) - froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
+            if (errno != EWOULDBLOCK) { perror("read error on socket"); }
+          }
+          else if (n == 0) {
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {

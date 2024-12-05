@@ -1,5 +1,5 @@
 #
-# Makefile for chat server
+# Makefile for TLS-enabled chat client, server, and directory server
 #
 CC	= gcc
 EXECUTABLES=chatClient5 chatServer5 directoryServer5
@@ -28,6 +28,12 @@ CFLAGS	+= -ggdb3
 LIBS	= -lcrypto -lssl
 all:	tls
 
+# Uncomment the LIBS line below containing the library that you're using
+#LIBS	= -lcrypto -lgnutls
+#LIBS	= -lcrypto -lssl
+
+all:	tls
+
 tls:	$(EXECUTABLES)
 
 
@@ -39,7 +45,6 @@ chatServer5: chatServer5.c $(DEPS)
 
 directoryServer5: directoryServer5.c $(DEPS)
 	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
-
 
 
 # Clean up the mess we made

@@ -24,6 +24,9 @@ struct connection {
   char servName[MAX];
   struct in_addr conIP; //I don't think I can keep this as a string. Need to do this as a in_addr
   int conPort;
+  char to[MAX], fr[MAX];
+  char *tooptr, *froptr;
+  int readyFlag;
   LIST_ENTRY(connection) servers;
   SSL *sslState;
 };
@@ -37,6 +40,7 @@ int main(int argc, char **argv)
 	struct sockaddr_in con_addr, dir_addr;
 	char				s[MAX];
   struct listhead head;
+  int n;
 
   /************************************************************/
   /*** Initialize Server SSL state                          ***/
@@ -63,9 +67,7 @@ int main(int argc, char **argv)
   LIST_INIT(&head);
  
   fd_set readset;
-
-
-  
+  fd_set writeset;
 
 	/* Create communication endpoint */
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -99,11 +101,16 @@ int main(int argc, char **argv)
    FD_ZERO(&readset);
    FD_SET(sockfd, &readset);
    maxfd = sockfd;
+
+   FD_ZERO(&writeset);
    //loop through servers using linked list and add them to the FD_SET
    struct connection* loopStruct = LIST_FIRST(&head); 
    LIST_FOREACH(loopStruct, &head, servers) {
      
      FD_SET(loopStruct->conSocket, &readset);
+     if (loopStruct->readyFlag == 1){
+      FD_SET(loopStruct->conSocket, &writeset);
+     }
      if(loopStruct->conSocket > maxfd){
        maxfd = loopStruct->conSocket;
      }
@@ -112,10 +119,10 @@ int main(int argc, char **argv)
    
    
 
-   fprintf(stdout, "Right before select statement\n");
+   //fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
-   if (select(maxfd+1, &readset, NULL, NULL, NULL) > 0){
+   if ((n = select(maxfd+1, &readset, &writeset, NULL, NULL)) > 0){
      //fprintf(stdout, "Readset 2: %u\n", readset);
      //fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
@@ -137,16 +144,23 @@ int main(int argc, char **argv)
             ERR_print_errors_fp(stderr);
             continue;
           }
-        fprintf(stdout, "Right before add to list\n");
+        if (fcntl(newsockfd, F_SETFL< O_NONBLOCK) != 0){
+          perror("server: couldn't set new client socket to nonblocking");
+          exit(1);
+        }
+        //fprintf(stdout, "Right before add to list\n");
         struct connection* newConnection = malloc(1*sizeof(struct connection));
         newConnection->conSocket = newsockfd;
         newConnection->servName[0] = '\0';
         newConnection->servNameFlag = 0;
+        newConnection->readyFlag = 0;
+        newConnection->tooptr = newConnection->to;
+        newConnection->froptr = newConnection->fr;
         newConnection->conIP = con_addr.sin_addr; //note: Might need to copy the memset in line 55 to properly allocate space for this
         //newConnection->conIP.sin_port = con_addr.sin_port; //note: I'm pretty sure this is the port it binds on the directory end, not what clients could use to connect
         newConnection->sslState = ssl;
         LIST_INSERT_HEAD(&head, newConnection, servers); //need to know that this won't have servName set first time
-        size++;
+        //size++;
         //fprintf(stdout, "Inserted into head. conSocket val: %d\n", newConnection->conSocket);
       }
       struct connection* tempStruct = LIST_FIRST(&head);
@@ -157,93 +171,81 @@ int main(int argc, char **argv)
         //fprintf(stdout, "Readset 5: %u\n", readset); 
         if(FD_ISSET(tempStruct->conSocket, &readset)){ 
           //fprintf(stdout, "In if fd_isset\n");
-          int readRet;
+          //int readRet;
           int nameFlag = 1;
 
        
           
-          // if ((readRet = read(tempStruct->conSocket, s, MAX)) < 0) 
-          if ((readRet = SSL_read(tempStruct->sslState, s, MAX)) < 0){ 
-			      fprintf(stderr, "%s:%d Error reading from client\n", __FILE__, __LINE__);
+          // if ((n = read(tempStruct->conSocket, tempStruct->froptr, &(tempStruct->fr[MAX]) - tempStruct->froptr)) < 0) 
+          if ((n = SSL_read(tempStruct->sslState, s, MAX)) < 0){ 
+			      if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
-          else if (readRet == 0) {
+          else if (n == 0) {
             //Catches client/server logging out. With the exception of freeing memory this should be good
             //snprintf(holder, MAX, "%s has logged out.", tempStruct->servName);
-            fprintf(stdout, "Right before remove from list.\n");
+            //fprintf(stdout, "Right before remove from list.\n");
             close(tempStruct->conSocket); 
             LIST_REMOVE(tempStruct, servers);
-            free(tempStruct);
-            size--;
-            /*struct connection* sendStruct = LIST_FIRST(&head);
-            LIST_FOREACH(sendStruct, &head, servers){
-              if (sendStruct->servNameFlag == 1){
-                write(sendStruct->conSocket, holder, MAX);
+            /*struct connection* writeLoop = LIST_FIRST(&head); 
+            LIST_FOREACH(writeLoop, &head, servers) {
+            if (writeLoop->servNameFlag == 1){ //I theoretically could just write it to all I think, since that's what I've done on previous assignments
+              snprintf(writeLoop->to, MAX, "%s has logged out", tempStruct->servName);
+              writeLoop->readyFlag = 1;
               }
             }*/
+            free(tempStruct);
+            //size--;
+
           }
           /* Generate an appropriate reply */
           //fprintf(stdout, "Before switch statement. readRet: %d\n", readRet);
-          else if (readRet > 0) { //checks if the client actually said something
+          else if (n > 0) { //checks if the client actually said something
             //int holder;
             //fprintf(stdout, "Right before switch statement\n");
-		        switch(s[0]) { /* based on the first character of the client's message */
-              //logic: Client side chat will apply a '1' on the first message registering the user's name,
-              //and a '2' on any further message that isn't a logout.
-              case '1': 
-                //code to register name
-                //fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->servName);
-                sscanf(&s[1], "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer.
+            /* sscanf(&s[1], "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer.
                 fprintf(stdout, "Server name recieved: %s\n", tempStruct->servName);
-                fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);
-                struct connection* nameStruct = LIST_FIRST(&head);
-                /* 
-                  note: the server that I'm trying to test should be at the head, hence the following line is needed. 
-                  if two servers could connect at the same time, this would throw an error by being out of order, but I'm going 
-                  to accept that edge case
-                */
-                nameStruct = LIST_NEXT(nameStruct, servers); 
-                while (nameStruct != NULL){ 
-                  if (strncmp(nameStruct->servName, tempStruct->servName, MAX) == 0){ 
-                    nameFlag = 0;
-                    //nameStruct->servNameFlag = 0;
+                fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);*/
+            tempStruct->froptr += n;
+            if (&(tempStruct->fr[MAX]) == tempStruct->froptr){
+              switch(tempStruct->fr[0]){
+                case '1':
+                  int nameFlag = 1;
+                  struct connection* nameStruct = LIST_FIRST(&head);
+                  //int connectedUsers = 0;
+                  while (nameStruct != NULL){ //this could probably be a list foreach, but it currently works and I don't want to mess with it
+                    if (nameStruct->servNameFlag == 1){
+                      if (strncmp(nameStruct->servName, &(tempStruct->fr[1]), MAX) == 0){
+                        nameFlag = 0;
+                      }
+                    }
+                  
+                    nameStruct = LIST_NEXT(nameStruct, servers);
                   }
-                  nameStruct = LIST_NEXT(nameStruct, servers);
-                } 
-                if (nameFlag == 1) {
-                  //snprintf(tempStruct->servName, MAX, "%s", &s[1]);
-                  //snrpintf(tempStruct->conIP.sin_port, MAX, "%d", //might have to put the next line into pointers, then put them into the variables. 
-                  /*sscanf(&s[1], "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer.
-                  fprintf(stdout, "Server name recieved: %s\n", tempStruct->servName);
-                  fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);*/
-                  tempStruct->servNameFlag = 1;
-                  tempStruct->conIP = con_addr.sin_addr; //conIP.sin_addr might not be the right way to get the address
-                  //snprintf(holder, MAX, "0%s", tempStruct->conIP);
-                  snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP));
-                  // write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
+                  if (nameFlag == 1){
+                    sscanf(&(tempStruct->fr[1]), "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer. Might want it to be snprintf
+                    tempStruct->servNameFlag = 1;
+                    tempStruct->conIP = con_addr.sin_addr;
+                    tempStruct->readyFlag = 1;
+                    snprintf(tempStruct->to, MAX, "0%s", inet_ntoa(tempStruct->conIP));
+                    //snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //need to figure out something to do with these lines
+                    //// write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
                   SSL_write(tempStruct->sslState, holder, MAX); 
-                  /*if(size > 1) {
-                    snprintf(holder, MAX, "%s has joined the chat.", tempStruct->servName);
-                  }
+                  } 
                   else{
-                    snprintf(holder, MAX, "You are the first user in this chat.");
-                  }*/
-                }
-                else { //if someone else already has name
-                  snprintf(holder, MAX, "1"); 
-                  // write(tempStruct->conSocket, holder, MAX);
+                    snprintf(tempStruct->to, MAX, "1");
+                    tempStruct->readyFlag = 1;
+                    //snprintf(holder, MAX, "1");  //will need to handle something here
+                  //   //write(tempStruct->conSocket, holder, MAX);
                   SSL_write(tempStruct->sslState, holder, MAX); 
-                }
-                break;
-              case '2':
-                //code to handle a client connecting
-                //fprintf(stdout, "Test statement: Caught regular message.\n");
-                //snprintf(holder, MAX-1, "%s: %s", tempStruct->servName, &s[1]);
-                fprintf(stdout, "In printing to client.\n");
-                snprintf(holder, MAX, "List of available servers:\n");
-                // write(tempStruct->conSocket, holder, MAX);
-                SSL_write(tempStruct->sslState, holder, MAX); 
-                //if (nameFlag == 1){
-                  fprintf(stdout, "If list is empty: %d\n", LIST_EMPTY(&head));
+                  }
+                  break;
+                case '2':
+                  fprintf(stdout, "In printing to client.\n");
+                  snprintf(holder, MAX, "List of available servers:\n");
+                  // write(tempStruct->conSocket, holder, MAX);
+                SSL_write(tempStruct->sslState, holder, MAX); //is ssl state socket?
+                  //if (nameFlag == 1){
+                  //fprintf(stdout, "If list is empty: %d\n", LIST_EMPTY(&head));
                   struct connection* sendStruct = LIST_FIRST(&head);
                   //fprintf(stdout, "")
                     LIST_FOREACH(sendStruct, &head, servers){
@@ -264,18 +266,18 @@ int main(int argc, char **argv)
                         // sendStruct->conIP, sendStruct->conPort, 
                       }
                   }
-                //}
-                close(tempStruct->conSocket); 
-                LIST_REMOVE(tempStruct, servers);
-                free(tempStruct); //might need to free the inner struct memory
-                size--;
-                fprintf(stdout, "End of client print.\n");
-                break;
-              case '3':
-                //code to exit user
-                //this gets handled in readRed == 0
-                break;
-              default: snprintf(holder, MAX, "Invalid request\n");
+                  //}
+                  close(tempStruct->conSocket); 
+                  LIST_REMOVE(tempStruct, servers);
+                  free(tempStruct); //might need to free the inner struct memory
+                  //size--;
+                  //fprintf(stdout, "End of client print.\n");
+                  break;
+                default: //snprintf(holder, MAX, "Invalid request\n");
+                  
+                  //fprintf(stdout, "Server name recieved: %s\n", tempStruct->servName);
+                  //fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);
+              }
             }
             //fprintf(stdout, "End if switch statement\n");
             /*if (nameFlag == 1){
@@ -288,7 +290,25 @@ int main(int argc, char **argv)
             }*/ //note: I don't think this is needed, the only time we send stuff is to clients
           }
         }
-      tempStruct = LIST_NEXT(tempStruct, servers);
+        else if (FD_ISSET(tempStruct->conSocket, &writeset)){
+          int nwritten;
+          if ((nwritten = write(tempStruct->conSocket, tempStruct->tooptr, &(tempStruct->to[MAX]) - tempStruct->tooptr)) < 0) {
+            if (errno != EWOULDBLOCK) { perror("write error on socket"); }
+          }
+          else {
+              //fprintf(stdout, "in the write block for sock %d\n", tempStruct->userSocket);
+              //fprintf(stdout, "nwritten = %d\n", nwritten);
+              tempStruct->tooptr += nwritten;
+              if (&(tempStruct->to[MAX]) == tempStruct->tooptr) {
+                tempStruct->readyFlag = 0;
+                tempStruct->froptr = tempStruct->fr;
+                tempStruct->tooptr = tempStruct->to;
+                //fprintf(stdout, "This is after it should get reset\n");
+              }
+              else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
+          }
+        }
+        tempStruct = LIST_NEXT(tempStruct, servers);
       //fprintf(stdout, "End of while loop\n");
       } 
     }	
