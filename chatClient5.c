@@ -6,6 +6,7 @@
 #include <string.h>
 #include "inet.h"
 #include "common.h"
+#include <openssl/ssl.h>
 
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
@@ -15,28 +16,55 @@
 int main(int argc, char **argv)
 {
 	char s[MAX] = {'\0'}; 
-	fd_set			readset; 
-  fd_set      writeset;
-	int				sockfd;
+	fd_set readset, writeset;
+	int	sockfd;
 	struct sockaddr_in serv_addr;
-	int				nread;	/* number of characters */
-  int       userFlag = 0; //checks if username has been created
+	int	nread;	/* number of characters */
+  int userFlag = 0; //checks if username has been created
   char holder[MAX] = {'\0', '\0'}; //used for concatinating strings with.
-  char        argvValOne[MAX];
-  int         argvValTwo;
+  char argvValOne[MAX];
+  int argvValTwo;
+  /* Non-blocking helpers*/
   char to[MAX], fr[MAX];
   char *tooptr = to, *froptr = fr;
   int readyFlag = 0, n;
   size_t nwritten;
 
+  
+  /************************************************************/
+  /*** Initialize Client SSL state (from Linux Socket Programming chapter 16)   ***/
+  /************************************************************/
+ 
 
+  //OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */ 
+  SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+  SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // allows only high-security ciphers, exlcuding ciphers without authentication and MD5
+  SSL_load_error_strings();        /* Load/register error msg */
+  const SSL_METHOD *method = TLS_client_method(); /* Create new client-method */
+ 
+  // if return values of the API are null or zero display error message and exit
+  if(method == NULL) {
+    ERR_print_errors_fp(stderr);
+    exit(2);
+  }
+  /*SSL_CTX *ctx = SSL_CTX_new(method);            // Create new context after init method 
+  if(ctx == NULL) {
+    ERR_print_errors_fp(stderr);
+    exit(2);
+  }*/
 	
-  if (argc == 1) { //handles initial call to directory
+	if (argc == 1) { //handles initial call to directory
+
+    /************************************************************/
+    /*** Create and connect client's socket to SSL server     ***/
+    /************************************************************/
+
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
 	  serv_addr.sin_family			= AF_INET;
 	  serv_addr.sin_addr.s_addr	= inet_addr(DIR_HOST_ADDR);
-	  serv_addr.sin_port			= htons(DIR_TCP_PORT);
-     
+	  serv_addr.sin_port			= htons(DIR_TCP_PORT); 
+
+    /* create socket */
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		  perror("client: can't open stream socket");
 		  exit(1);
@@ -47,11 +75,57 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to directory");
 		  exit(1);
 	  }
+
+    /************************************************************/
+    /*** Establish SSL protocol and create encryption link    ***/
+    /************************************************************/
+    SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
+    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
+    if (SSL_connect(ssl) <= 0 ) {     /* perform the connection */
+      ERR_print_errors_fp(stderr);        /* report any errors */
+    }
+
+
+    /************************************************************/
+    /*** Checking certificates                                ***/
+    /************************************************************/
+    X509 *cert = SSL_get_peer_certificate(ssl);
+    if (cert != NULL) {
+      char actual[MAX];
+      X509_NAME *subject = X509_get_subject_name(cert);
+      X509_NAME_get_text_by_NID(subject, NID_commonName, actual, sizeof(actual));
+      const char *expected = "Directory Server"; 
+      if (strcmp(actual, expected) != 0) {
+          fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
+          X509_free(cert);
+          SSL_free(ssl);
+          close(sockfd);
+          exit(1);
+      }
+    } else {
+      printf("No certificates.\n");
+      SSL_free(ssl);
+      close(sockfd);
+      exit(1);
+    }
+
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
+      perror("client: couldn't set new client socket to nonblocking");
+      exit(1);
+    }
     snprintf(holder, MAX, "2");
-    write(sockfd, holder, MAX); 
+
+    //write(sockfd, holder, MAX); 
+    if(SSL_write(ssl, holder, MAX) < 0)   /* encrypt/send */
+    {
+      ERR_print_errors_fp(stderr);
+    }
+
     //Note: Will need to write a message to the directory saying that I'm client with 2
     //fprintf(stdout, "Before nread if branch\n");
-    if ((nread = read(sockfd, s, MAX)) < 0) { 
+
+
+    if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
 		  perror("Error reading from directory\n");
       close(sockfd); 
       exit(1);
@@ -62,7 +136,7 @@ int main(int argc, char **argv)
         while(nread > 0){
             snprintf(holder, MAX, "Read from server: %s\n", s);
             printf("%s", holder);
-            nread = read(sockfd, s, MAX);
+            nread = SSL_read(ssl, s, MAX);
         }
         close(sockfd);
         exit(0);				
@@ -73,7 +147,7 @@ int main(int argc, char **argv)
       exit(0);
     }
   } 
-  else if (argc == 3) { //handles connection to server
+  else if (argc == 4) { //handles connection to server Usage: <address> <port> <chatroom name>
     if (sscanf(argv[1], "%s", argvValOne) < 0) {
       perror("Unable to parse address.");
       exit(1);
@@ -119,6 +193,56 @@ int main(int argc, char **argv)
       exit(1);
     }
 
+    /************************************************************/
+    /*** Establish SSL protocol and create encryption link    ***/
+    /************************************************************/
+    SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
+    SSL_set_fd(ssl, sockfd); /* attach the socket descriptor */
+
+    int x = SSL_connect(ssl); /* perform the connection */
+    if (x < 0) {
+      int err = SSL_get_error(ssl, x);
+      if (err == SSL_ERROR_WANT_READ) {
+          fprintf(stderr, "SSL_connect needs to read more data.\n");
+      } else if (err == SSL_ERROR_WANT_WRITE) {
+          fprintf(stderr, "SSL_connect needs to write more data.\n");
+      } else {
+          fprintf(stderr, "SSL_connect failed with error: %d\n", err);
+          ERR_print_errors_fp(stderr); /* report any other errors */
+      }
+    }
+    else if (x == 1) {
+        fprintf(stdout, "SSL connection successfully established.\n");
+    }
+
+    fprintf(stdout, "Return value of SSL_connect: %d\n", x);
+
+    /************************************************************/
+    /*** Checking certificates                                ***/
+    /************************************************************/
+    X509 *cert = SSL_get_peer_certificate(ssl);
+    if (cert != NULL && argv[3] != NULL) {
+      char actual[MAX];
+      X509_NAME *subject = X509_get_subject_name(cert);
+      X509_NAME_get_text_by_NID(subject, NID_commonName, actual, sizeof(actual));
+      const char *expected = argv[3]; 
+      if (strcmp(actual, expected) != 0) {
+          fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
+          X509_free(cert);
+          SSL_free(ssl);
+          close(sockfd);
+          exit(1);
+      }
+    } else {
+      printf("No certificates.\n");
+      SSL_free(ssl);
+      close(sockfd);
+      exit(1);
+    }
+    
+    //fprintf(stdout, "Before for loop, testing rfd/wfd of ssl vs socket.\n");
+    //fprintf(stdout, "sockfd: %d. get_rfd: %d. get_wfd: %d.\n", sockfd, SSL_get_rfd(ssl), SSL_get_wfd(ssl));
+
 	  for(;;) {
 
 		  FD_ZERO(&readset);
@@ -128,76 +252,82 @@ int main(int argc, char **argv)
       if(readyFlag) {
         FD_SET(sockfd, &writeset);
       }
-		  if ((n = select(sockfd+1, &readset, &writeset, NULL, NULL)) > 0) 
+
+      for (int fd = 0; fd <= sockfd+1; fd++) {
+        if (FD_ISSET(fd, &readset)) {
+            printf("File descriptor %d is in the readset.\n", fd);
+        }
+      }
+
+		  if (n = (select(sockfd+1, &readset, NULL, NULL, NULL)) > 0) 
 		  {
+        fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
-				  //fprintf(stdout, "In client read from terminal.\n");
-          //if (1 == scanf(" %[^\n]s", s)) {
-          // why need a format string? reading not scanning? - sophia
-          
-          // reading input to be written TO the server
-          if ((n = read(0, tooptr, &(to[MAX]) - tooptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
+				  fprintf(stdout, "In client read from terminal.\n");
+          size_t n;
+          char s[MAX];
+          if ((n = read(STDIN_FILENO, tooptr, &(to[MAX]) - tooptr)) < 0) {
             if (errno != EWOULDBLOCK) { perror("read error on socket"); }
-          }
-          else if (n > 0) { // bytes have been read
-            tooptr += n; // add those bytes to the buffer
-            // if the buffer is full, send the message
-            if(tooptr == &(to[MAX])) {
-              readyFlag = 1; // ready to write 
-              tooptr = to; // reset buffer
-            }
-          
-					  /* Send the user's message to the server */ 
-            //handles case of 1st message to register username
-            
-            if (userFlag == 0) { // if the username is not set
-              //fprintf(stdout, "In userFlag 0 send branch\n");
-              snprintf(tooptr, MAX, "1%s", to); // add to buffer with 1 at the beginning
-              //write(sockfd, holder, MAX);
-              userFlag = 1; // username now set
-            }
-            else { //catches regular message
-              
-              //fprintf(stdout, "In userFlag 2 send branch\n");
-              snprintf(tooptr, MAX, "2%s", to); // add to buffer with 2 at the beginning 
-              //write(sockfd, holder, MAX);
-            }
-            //write(sockfd, holder, MAX); // write the buffer 
 				  } 
+          else if(n > 0) {
+            /* Send the user's message to the server */ 
+            
+            tooptr += n;
+            if(tooptr == &(to[MAX])) {
+              readyFlag = 1;
+              tooptr = to;
+            }
+
+            //handles case of 1st message to register username
+            fprintf(stdout, "User input: %s\n", s);
+            if (userFlag == 0) {
+              fprintf(stdout, "In userFlag 0 send branch\n");
+              snprintf(holder, MAX, "1%s", s);
+              //SSL_write(ssl, holder, MAX);
+              userFlag = 1;
+            }
+            else {
+              //catches regular message
+              fprintf(stdout, "In userFlag 2 send branch\n");
+              snprintf(holder, MAX, "2%s", s);
+              //SSL_write(ssl, holder, MAX);
+            }
+          }
           else {
 					  printf("Error reading or parsing user input\n");
 				  }
 		    }
 			  /* Check whether there's a message from the server to read */
 			  if (FD_ISSET(sockfd, &readset)) { 
-				  //fprintf(stdout, "In client read from server.\n");
-          // reading FROM the server
-          if ((nread = read(sockfd, froptr, &(fr[MAX]) - froptr)) < 0) { 
+				  fprintf(stdout, "In client read from server.\n");
+          if ((nread = SSL_read(ssl, froptr, &(fr[MAX]) - froptr)) < 0) { 
 					  fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
             froptr += nread;
-            if(froptr == &(fr[MAX])) { // if the buffer is full
-              froptr = fr; // reset pointer
+            if(froptr == &(fr[MAX])) {
+              froptr = fr;
               
-              if(userFlag == 1 && strncmp(&fr[0], "1", MAX) == 0){
+              if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
                 fprintf(stdout, "Username already taken. Try again!\n");
-                //fprintf(stdout, "In userFlag 1 recieve branch\n");
+                fprintf(stdout, "In userFlag 1 recieve branch\n");
                 userFlag = 0;
               }
               else {
-                //fprintf(stdout, "In userFlag 2 recieve branch\n");
+                fprintf(stdout, "In userFlag 2 recieve branch\n");
                 userFlag = 2;
                 char printer[MAX];
-                snprintf(printer, MAX, "Read from server: %s\n", fr);
+                snprintf(printer, MAX, "Read from server: %s\n", s);
                 printf("%s", printer);
               }
             }
 				  }
           else {
             fprintf(stdout, "Server closed\n");
+            SSL_free(ssl);
             close(sockfd);
+            SSL_CTX_free(ctx);
             exit(0);
           }
 			  }
@@ -228,14 +358,16 @@ int main(int argc, char **argv)
             }
             //readyFlag = 0;
           }
-		    }
-      }
+        }
+		  }
+      SSL_free(ssl);
       close(sockfd);
+      SSL_CTX_free(ctx);
       exit(0);
-    }
+	  }
   }
   else {
-    perror("Error: Invalid number of arguments.");
+    fprintf(stderr, "Usage: <IP> <port> <chatroom name>\n");
     exit(1);
   }
 }
