@@ -261,13 +261,15 @@ int main(int argc, char **argv)
                     tempStruct->servNameFlag = 1;
                     tempStruct->conIP = con_addr.sin_addr;
                     tempStruct->readyFlag = 1;
-                    snprintf(tempStruct->to, MAX, "0%s", inet_ntoa(tempStruct->conIP));
+                    snprintf(tempStruct->write, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //this puts it in write, so I think that's all it needs to do
                     //snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //need to figure out something to do with these lines
                     //// write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
-                  SSL_write(tempStruct->sslState, holder, MAX);  //probably shouldn't write here - Aidan
+                    //SSL_write(tempStruct->sslState, holder, MAX);  //probably shouldn't write here - Aidan
+                    //tempStruct->readyFlag = 1;
+                    
 
                   /*************** write to the buffer instead ************************/
-                 // SSL_write(tempStruct->sslState, holder, MAX); 
+                  // SSL_write(tempStruct->sslState, holder, MAX); 
                   /*tempStruct->writeptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
                   FD_SET(tempStruct->conSocket,&writeset);*/ //this is the stuff Tatenda did, will need reworked
@@ -277,8 +279,8 @@ int main(int argc, char **argv)
                     snprintf(tempStruct->write, MAX, "1");
                     tempStruct->readyFlag = 1;
                     //snprintf(holder, MAX, "1");  //will need to handle something here
-                  //   //write(tempStruct->conSocket, holder, MAX);
-                    SSL_write(tempStruct->sslState, holder, MAX); //again, shouldn't write here - Aidan
+                    //   //write(tempStruct->conSocket, holder, MAX);
+                    //SSL_write(tempStruct->sslState, holder, MAX); //again, shouldn't write here - Aidan
                   /****************************************** non blocking */
                   /*tempStruct->writeptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
@@ -368,7 +370,7 @@ int main(int argc, char **argv)
         }
         else if (FD_ISSET(tempStruct->conSocket, &writeset)){
           int nwritten;
-          if ((nwritten = write(tempStruct->conSocket, tempStruct->writeptr, &(tempStruct->write[MAX]) - tempStruct->writeptr)) < 0) {
+          if ((nwritten = SSL_write(tempStruct->sslState, tempStruct->writeptr, &(tempStruct->write[MAX]) - tempStruct->writeptr)) < 0) {
             if (errno != EWOULDBLOCK) { perror("write error on socket"); }
           }
           else {
@@ -377,8 +379,8 @@ int main(int argc, char **argv)
               tempStruct->writeptr += nwritten;
               if (&(tempStruct->write[MAX]) == tempStruct->writeptr) {
                 tempStruct->readyFlag = 0;
-                tempStruct->read = tempStruct->readptr;
-                tempStruct->writeptr = tempStruct->writeptr;
+                tempStruct->readptr = tempStruct->read;
+                tempStruct->writeptr = tempStruct->write;
                 //fprintf(stdout, "This is after it should get reset\n");
               }
               else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
