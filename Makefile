@@ -25,20 +25,21 @@ CFLAGS	+= -ggdb3
 #CFLAGS	+= -Wc99-c11-compat -Wmaybe-uninitialized \
 					-Wformat-truncation=2 -Wstringop-truncation \
 					-Wformat-overflow=2 -Wformat-signedness
+LIBS	= -lcrypto -lssl
+all:	tls
 
-all:	chat2
-
-chat2:	$(EXECUTABLES)
+tls:	$(EXECUTABLES)
 
 
 chatClient5: chatClient5.c $(DEPS)
-	$(CC) $(LDFLAGS) $(CFLAGS) $(LIBS) -o $@ $<
+	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
 
 chatServer5: chatServer5.c $(DEPS)
-	$(CC) $(LDFLAGS) $(CFLAGS) $(LIBS) -o $@ $<
+	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
 
 directoryServer5: directoryServer5.c $(DEPS)
-	$(CC) $(LDFLAGS) $(CFLAGS) $(LIBS) -o $@ $<
+	$(CC) $(LDFLAGS) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $< $(LIBS)
+
 
 
 # Clean up the mess we made

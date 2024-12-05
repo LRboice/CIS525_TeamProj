@@ -72,7 +72,10 @@ int main(int argc, char **argv)
   LIST_INIT(&head);
  
   fd_set readset;
+
+  /**********  adding writeset */
   fd_set writeset;
+  FD_ZERO(&writeset);
 
 
   
@@ -120,13 +123,19 @@ int main(int argc, char **argv)
      }
      //fprintf(stdout, "In adding loop. Current is %d\n", loopStruct->conSocket);
    }
+
+   /**************** resset writeset */
+
+        fd_set writesetcopy;
+        writesetcopy = writeset;
+  
    
    
 
    fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
-   if (select(maxfd+1, &readset, NULL, NULL, NULL) > 0){
+   if (select(maxfd+1, &readset,&writesetcopy, NULL, NULL) > 0){
      //fprintf(stdout, "Readset 2: %u\n", readset);
      //fprintf(stdout, "Right after select statement\n"); 
      /* Accept a new connection request */
@@ -163,7 +172,7 @@ int main(int argc, char **argv)
        
 
 
-       / *********set up linkedlist fields*************/
+       /********* set up linkedlist fields*************/
         newConnection->sslState = ssl;
         newConnection->writeptr = newConnection->write;
         newConnection->readptr = newConnection->read;
@@ -366,13 +375,14 @@ int main(int argc, char **argv)
 
 
       /*************************  */
-            LIST_FOREACH(np, &head, entries){
+            LIST_FOREACH(np, &head, servers){
 
-                    if(FD_ISSET(np->socketno, &writesetcopy) && (*(np->write) != '\0'))
+                    if(FD_ISSET(np->conSocket, &writesetcopy) && (*(np->write) != '\0'))
                     {
                         fprintf(stderr,"ready to write\n");
-                        int nwritten;                   
-                        if ((nwritten = write(np->socketno, np->writeptr,(np->write + MAX) - np->writeptr)) < 0) {
+                        int nwritten;       
+                        //SSL_write(tempStruct->sslState, holder, MAX);            
+                        if ((nwritten = SSL_write(np->sslState, np->writeptr,MAX) < 0)) {
                         if (errno != EWOULDBLOCK) { perror("write error on socket"); }
                         }
                         else {
@@ -380,7 +390,7 @@ int main(int argc, char **argv)
                             fprintf(stderr,"just wrote %d bytes\n",nwritten);
                         if (&(np->write[MAX]) == np->writeptr) {
                             np->writeptr = np->write;
-                            FD_CLR(np->socketno,&writeset);
+                            FD_CLR(np->conSocket,&writeset);
                             memset(np->write, '\0', MAX);
 
                         }
