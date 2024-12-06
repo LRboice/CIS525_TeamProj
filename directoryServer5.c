@@ -29,6 +29,7 @@ struct connection {
   char write[MAX];
   char read[MAX];
   char *writeptr, *readptr;
+  char * messageptr;
 
 };
 //make the sockets non blocking
@@ -266,6 +267,7 @@ int main(int argc, char **argv)
                   /*************** write to the buffer instead ************************/
                  // SSL_write(tempStruct->sslState, holder, MAX); 
                   tempStruct->writeptr = tempStruct->write;
+                  tempStruct->messageptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
                   fprintf(stderr,"adding to writeset %s",tempStruct->writeptr);
                   FD_SET(tempStruct->conSocket,&writeset);
@@ -286,6 +288,7 @@ int main(int argc, char **argv)
                   //SSL_write(tempStruct->sslState, holder, MAX); 
                   /****************************************** non blocking */
                   tempStruct->writeptr = tempStruct->write;
+                  tempStruct->messageptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
                   FD_SET(tempStruct->conSocket,&writeset);
 
@@ -302,6 +305,7 @@ int main(int argc, char **argv)
                  /****************************************** non blocking */
                 //SSL_write(tempStruct->sslState, holder, MAX); 
                   tempStruct->writeptr = tempStruct->write;
+                  tempStruct->messageptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
                   tempStruct->writeptr += strlen(holder);
               
@@ -312,34 +316,34 @@ int main(int argc, char **argv)
                   //fprintf(stdout, "")
                     LIST_FOREACH(sendStruct, &head, servers){
                       if(sendStruct->servNameFlag == 1){
-                        snprintf(holder, MAX, "%s", sendStruct->servName);
+                        snprintf(holder, MAX, "%s ", sendStruct->servName);
                         fprintf(stdout, "First server name: %s\n", sendStruct->servName);
                         // write(tempStruct->conSocket, holder, MAX);
                         /****************************************** non blocking */
 
 
                         //SSL_write(tempStruct->sslState, holder, MAX); 
-                        snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                        snprintf(tempStruct->writeptr,MAX,"%s ",holder);
                         tempStruct->writeptr += strlen(holder);
 
 
-                        snprintf(holder, MAX, "%s", inet_ntoa(sendStruct->conIP));
+                        snprintf(holder, MAX, "%s ", inet_ntoa(sendStruct->conIP));
                         fprintf(stdout, "First server IP: %s\n", inet_ntoa(sendStruct->conIP));
                         // write(tempStruct->conSocket, holder, MAX); //need to send this as a string
                         //SSL_write(tempStruct->sslState, holder, MAX); 
 
-                        snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                        snprintf(tempStruct->writeptr,MAX,"%s ",holder);
                         tempStruct->writeptr += strlen(holder);
                         fprintf(stderr, "%d",strlen(holder));
 
 
 
-                        snprintf(holder, MAX, "%d", sendStruct->conPort);
+                        snprintf(holder, MAX, "%d\n", sendStruct->conPort);
                         fprintf(stdout, "First server port: %d\n", sendStruct->conPort);
                         // write(tempStruct->conSocket, holder, MAX);
                        // SSL_write(tempStruct->sslState, holder, MAX); 
 
-                         snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                         snprintf(tempStruct->writeptr,MAX,"%s\n",holder);
                         tempStruct->writeptr += strlen(holder);
                        
 
@@ -362,7 +366,6 @@ int main(int argc, char **argv)
               case '3':
                 //code to exit user
                 //this gets handled in readRed == 0
-                fprintf(stderr,"case3\n");
                 break;
               default: snprintf(holder, MAX, "Invalid request\n");
             }
@@ -390,12 +393,17 @@ int main(int argc, char **argv)
                         fprintf(stderr,"ready to write %s\n",np->writeptr);
                         int nwritten;       
                         //SSL_write(tempStruct->sslState, holder, MAX);            
-                        if ((nwritten = SSL_write(np->sslState, np->writeptr,MAX) < 0)) {
+                        if ((nwritten = SSL_write(np->sslState, np->messageptr,MAX) < 0)) {
                         if (errno != EWOULDBLOCK) { perror("write error on socket"); }
                         }
                         else {
 
                           //why is it writing 0 
+                          np->messageptr += nwritten;
+                          if(np->messageptr == np->writeptr){
+                            //reset
+                            np->messageptr = np->write;
+                          }
                             np->writeptr += nwritten; /* bytes just written */
                             fprintf(stderr,"just wrote %d bytes\n",nwritten);
                               FD_CLR(np->conSocket,&writeset);
