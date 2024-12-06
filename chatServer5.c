@@ -263,6 +263,7 @@ int main(int argc, char **argv)
         //SSL_write(newConnection->cliSSL, "2Test message from server.", MAX); //this needs to be nonblock
         snprintf(newConnection->to, MAX, "2Please enter your username.");//something like this
         newConnection->readyFlag = 1;
+        fprintf(stdout, "Accepted client\n");
       }
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 
@@ -317,7 +318,7 @@ int main(int argc, char **argv)
                     }
                   
                     nameStruct = LIST_NEXT(nameStruct, clients);
-                  } 
+                  } //note: I think I lost the first user chat case *somehow* - Aidan
                   if (nameFlag == 1) {
                     snprintf(tempStruct->nickname, MAX-1, "%s", &(tempStruct->fr[1]));
                     tempStruct->nicknameFlag = 1;
@@ -329,9 +330,15 @@ int main(int argc, char **argv)
                           writeLoop->readyFlag = 1;
                         }
                       }
-                      //fprintf(stderr, "%s has joined the chat.\n", tempStruct->nickname);
+                      fprintf(stderr, "%s has joined the chat.\n", tempStruct->nickname);
                     }  //might be extra parenthesis
-                else { //if someone else already has name
+                    else{
+                      snprintf(tempStruct->to, MAX, "You are the first user in this chat.");
+                      tempStruct->readyFlag = 1;
+                      firstFlag = 1;
+                    }
+                  }
+                  else { //if someone else already has name
                     snprintf(tempStruct->to, MAX, "1");
                     tempStruct->readyFlag = 1;
                     //fprintf(stderr, "1 (someone already has nickname)\n");
@@ -394,4 +401,3 @@ int main(int argc, char **argv)
     }	
 	//fprintf(stdout, "End of for loop\n");
   }
-}

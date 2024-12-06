@@ -244,26 +244,26 @@ int main(int argc, char **argv)
 		  {
         fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
-			  if (FD_ISSET(STDIN_FILENO, &readset)) {
-				  //fprintf(stdout, "In client read from terminal.\n");
-          if ((n = read(0, " %[^\n]s", &(fr[MAX]) - froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
-            if (errno != EWOULDBLOCK) { perror("read error on socket"); }
+			  if (FD_ISSET(STDIN_FILENO, &readset)) { //(n = read(STDIN_FILENO, " %[^\n]s", &(fr[MAX]) - froptr)) < 0
+				  fprintf(stdout, "In client read from terminal.\n"); //changed read to scanf, removed the 0 at the beginning
+          if ((n = scanf(" %[^\n]s", froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan 
+            if (errno != EWOULDBLOCK) { perror("read error on socket"); }//I think the error might be here
           }
           else if (n > 0) { //was ==0, changed to > 0
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {
               fprintf(stdout, "In userFlag 0 send branch\n");
-              snprintf(holder, MAX, "1%s", s);
+              snprintf(to, MAX, "1%s", fr); //these shouldn't put into holder, not sure if it's to or fr. Trying to
               //SSL_write(ssl, holder, MAX);
               userFlag = 1;
-              readyFlag = 1;
+              readyFlag = 1; //this doesn't incrememnt fropointer
               
             }
             else {
               //catches regular message
               fprintf(stdout, "In userFlag 2 send branch\n");
-              snprintf(holder, MAX, "2%s", s);
+              snprintf(to, MAX, "2%s", fr);
               //SSL_write(ssl, holder, MAX);
               readyFlag = 1;
             }
@@ -281,17 +281,21 @@ int main(int argc, char **argv)
             froptr += nread;
             if(froptr == &(fr[MAX])) {
               froptr = fr;
+              readyFlag = 0;
               
-              if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
+              if(userFlag == 1 && strncmp(&fr[0], "1", MAX) == 0){
                 fprintf(stdout, "Username already taken. Try again!\n");
                 fprintf(stdout, "In userFlag 1 recieve branch\n");
                 userFlag = 0;
+              }
+              else if (userFlag == 0){
+                fprintf("%s\n", fr);
               }
               else {
                 fprintf(stdout, "In userFlag 2 recieve branch\n");
                 userFlag = 2;
                 char printer[MAX];
-                snprintf(printer, MAX, "Read from server: %s\n", s);
+                snprintf(printer, MAX, "Read from server: %s\n", fr); //I *think* I can use printer here
                 printf("%s", printer);
               }
             }
