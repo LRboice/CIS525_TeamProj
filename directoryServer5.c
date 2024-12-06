@@ -454,16 +454,21 @@ int main(int argc, char **argv)
                             if (servListLoop->servNameFlag > tempStruct->serverListStruct->servNameFlag){
                               tempStruct->serverListStruct = servListLoop;
                             }
-                            servListLoop = LIST_NEXT(tempStruct, servers);
+                            servListLoop = LIST_NEXT(servListLoop, servers);
+                            fprintf(stdout, "In the check loop.\n");
                           }
                           if (holder == tempStruct->serverListStruct->servNameFlag){
                             //this branch means you've looped through all the servers
                             tempStruct->serverListState = 0;
+                            snprintf(tempStruct->write, MAX, "1");
+                            tempStruct->readyFlag = 1;
+                            fprintf(stdout, "In end case\n");
                           }
                           else{
                             snprintf(tempStruct->write, MAX, "Server #%d", tempStruct->serverListStruct->servNameFlag);
                             tempStruct->readyFlag = 1;
                             tempStruct->serverListState = 1;
+                            fprintf(stdout, "In continue case\n");
                           }
                           break;
                           default: fprintf(stdout, "Hit default\n"); break;

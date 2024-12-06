@@ -128,11 +128,12 @@ int main(int argc, char **argv)
     else if (nread > 0) {
       //handle reading from directory. will need a loop due to how directory puts stuff to client
         //fprintf(stdout, "In read from Directory branch\n");
-        while(nread > 0){
-            snprintf(holder, MAX, "Read from server: %s\n", s);
+        while(nread > 0 && strncmp(&s[0], "1", MAX) != 0){ //might need to do string comparison here //strncmp(&s[0], "1", MAX) == 0 //s[0] != 1
+            snprintf(holder, MAX, "Read from directory: %s\n", s);
             printf("%s", holder);
             nread = SSL_read(ssl, s, MAX);
         }
+        fprintf(stdout, "Done reading from directory\n");
         close(sockfd);
         exit(0);				
     }
