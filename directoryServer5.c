@@ -62,9 +62,9 @@ int main(int argc, char **argv)
   /*** Load certificate and private key files               ***/
   /************************************************************/
   /* set the local certificate from CertFile */
-  SSL_CTX_use_certificate_file(ctx, "directory_server.crt", SSL_FILETYPE_PEM);
+  SSL_CTX_use_certificate_file(ctx, "directory.crt", SSL_FILETYPE_PEM);
   /* set private key from KeyFile */
-  SSL_CTX_use_PrivateKey_file(ctx, "directory_server.key", SSL_FILETYPE_PEM);
+  SSL_CTX_use_PrivateKey_file(ctx, "directory.key", SSL_FILETYPE_PEM);
   /* verify private key */
   if ( !SSL_CTX_check_private_key(ctx) )
     fprintf(stderr, "Key & certificate don't match");
@@ -132,7 +132,7 @@ int main(int argc, char **argv)
    
    
 
-   fprintf(stdout, "Right before select statement\n");
+   //fprintf(stdout, "Right before select statement\n");
    //fprintf(stdout, "Readset 1: %u\n", readset);
    
    if (select(maxfd+1, &readset,&writesetcopy, NULL, NULL) > 0){
@@ -141,8 +141,9 @@ int main(int argc, char **argv)
      /* Accept a new connection request */
 		  conlen = sizeof(con_addr);
       if (FD_ISSET(sockfd, &readset)){
-        //fprintf(stdout, "In the accept statement for socket.\n")
+       // fprintf(stdout, "In the accept statement for socket.\n");
         //fprintf(stdout, "Readset 3: %u\n", readset);;
+      
         int newsockfd = accept(sockfd, (struct sockaddr *) &con_addr, &conlen);
         if (newsockfd <= 0) {
 			    perror("directory: accept error");
@@ -223,14 +224,16 @@ int main(int argc, char **argv)
           //fprintf(stdout, "Before switch statement. readRet: %d\n", readRet);
           else if (readRet > 0) { //checks if the client actually said something
             //int holder;
-            //fprintf(stdout, "Right before switch statement\n");
-		        switch(s[0]) { /* based on the first character of the client's message */
+            fprintf(stdout, "Right before switch statement\n");
+            // fprintf(stderr,)
+		        switch(tempStruct->readptr[0]) { /* based on the first character of the client's message */
               //logic: Client side chat will apply a '1' on the first message registering the user's name,
               //and a '2' on any further message that isn't a logout.
               case '1': 
                 //code to register name
-                //fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->servName);
-                sscanf(&s[1], "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer.
+                fprintf(stderr,"case 1\n");
+                fprintf(stdout, "Test statement: Registered name: %s\n", tempStruct->servName);
+                sscanf(&tempStruct->readptr[1], "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer.
                 fprintf(stdout, "Server name recieved: %s\n", tempStruct->servName);
                 fprintf(stdout, "Server port recieved: %d\n", tempStruct->conPort);
                 struct connection* nameStruct = LIST_FIRST(&head);
@@ -264,6 +267,7 @@ int main(int argc, char **argv)
                  // SSL_write(tempStruct->sslState, holder, MAX); 
                   tempStruct->writeptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                  fprintf(stderr,"adding to writeset %s",tempStruct->writeptr);
                   FD_SET(tempStruct->conSocket,&writeset);
 
 
@@ -276,6 +280,7 @@ int main(int argc, char **argv)
                   }*/
                 }
                 else { //if someone else already has name
+                fprintf(stderr,"invalid name\n");
                   snprintf(holder, MAX, "1"); 
                   // write(tempStruct->conSocket, holder, MAX);
                   //SSL_write(tempStruct->sslState, holder, MAX); 
@@ -325,6 +330,7 @@ int main(int argc, char **argv)
 
                         snprintf(tempStruct->writeptr,MAX,"%s",holder);
                         tempStruct->writeptr += strlen(holder);
+                        fprintf(stderr, "%d",strlen(holder));
 
 
 
@@ -335,7 +341,7 @@ int main(int argc, char **argv)
 
                          snprintf(tempStruct->writeptr,MAX,"%s",holder);
                         tempStruct->writeptr += strlen(holder);
-                        FD_SET(tempStruct->conSocket,&writeset);
+                       
 
 
                         fprintf(stdout, "Has printed to client.\n");
@@ -344,6 +350,7 @@ int main(int argc, char **argv)
                         // sendStruct->conIP, sendStruct->conPort, 
                       }
                   }
+                   FD_SET(tempStruct->conSocket,&writeset);
                 //}
                 /*******************   */
                 // close(tempStruct->conSocket); 
@@ -355,10 +362,11 @@ int main(int argc, char **argv)
               case '3':
                 //code to exit user
                 //this gets handled in readRed == 0
+                fprintf(stderr,"case3\n");
                 break;
               default: snprintf(holder, MAX, "Invalid request\n");
             }
-            //fprintf(stdout, "End if switch statement\n");
+            fprintf(stdout, "End if switch statement\n");
             /*if (nameFlag == 1){
               struct connection* sendStruct = LIST_FIRST(&head);
               LIST_FOREACH(sendStruct, &head, servers){
@@ -379,15 +387,18 @@ int main(int argc, char **argv)
 
                     if(FD_ISSET(np->conSocket, &writesetcopy) && (*(np->write) != '\0'))
                     {
-                        fprintf(stderr,"ready to write\n");
+                        fprintf(stderr,"ready to write %s\n",np->writeptr);
                         int nwritten;       
                         //SSL_write(tempStruct->sslState, holder, MAX);            
                         if ((nwritten = SSL_write(np->sslState, np->writeptr,MAX) < 0)) {
                         if (errno != EWOULDBLOCK) { perror("write error on socket"); }
                         }
                         else {
+
+                          //why is it writing 0 
                             np->writeptr += nwritten; /* bytes just written */
                             fprintf(stderr,"just wrote %d bytes\n",nwritten);
+                              FD_CLR(np->conSocket,&writeset);
                         if (&(np->write[MAX]) == np->writeptr) {
                             np->writeptr = np->write;
                             FD_CLR(np->conSocket,&writeset);
@@ -396,7 +407,8 @@ int main(int argc, char **argv)
                         }
                         }
                         
-                      
+                    
+
                     }
                 }
 

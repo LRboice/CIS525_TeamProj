@@ -7,12 +7,12 @@
 #include "inet.h"
 #include "common.h"
 #include <openssl/ssl.h>
-#include <openssl/bio.h>
-#include <openssl/err.h> 
+
 /*
   NOTE: If any wonkiness happens assume it's something related to that, or the fact that you can't hardcode server addresses/ports
   TODO: have the client have different functionality based on different argc input
 */
+
 int main(int argc, char **argv)
 {
 	char s[MAX] = {'\0'}; 
@@ -28,24 +28,24 @@ int main(int argc, char **argv)
   /************************************************************/
   /*** Initialize Client SSL state (from Linux Socket Programming chapter 16)   ***/
   /************************************************************/
-  /*const SSL_METHOD *method = TLS_client_method();   /* Create new client-method   
+ 
 
+  //OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */ 
+  SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+  SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // allows only high-security ciphers, exlcuding ciphers without authentication and MD5
+  SSL_load_error_strings();        /* Load/register error msg */
+  const SSL_METHOD *method = TLS_client_method(); /* Create new client-method */
+ 
+  // if return values of the API are null or zero display error message and exit
   if(method == NULL) {
     ERR_print_errors_fp(stderr);
     exit(2);
-  } */
-  SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());  // Fixed uninitialized ctx
-  if (ctx == NULL) {
-      ERR_print_errors_fp(stderr);  // Added error handling for SSL_CTX creation
-      exit(2);
   }
-    
-    SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // Set cipher list 
-    SSL_load_error_strings();        /* Load/register error msg */
-  
-  // if return values of the API are null or zero display error message and exit
-
-  
+  /*SSL_CTX *ctx = SSL_CTX_new(method);            // Create new context after init method 
+  if(ctx == NULL) {
+    ERR_print_errors_fp(stderr);
+    exit(2);
+  }*/
 	
 	if (argc == 1) { //handles initial call to directory
 
@@ -69,24 +69,16 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to directory");
 		  exit(1);
 	  }
-
+  fprintf(stderr,"connected to directory\n");
     /************************************************************/
     /*** Establish SSL protocol and create encryption link    ***/
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
-    BIO *bio = BIO_new_socket(sockfd, BIO_NOCLOSE); /*create a new BIO with no close tag set*/
-    if(bio == NULL){
-      perror("client: BIO_new_socket failed"); 
-      exit(1);
-    }
-    BIO_set_flags(bio, BIO_SOCK_NONBLOCK); /*make it non blocking */
-    SSL_set_bio(ssl, bio, bio);/*set bio for ssl con*/ 
-    
+    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
     if (SSL_connect(ssl) <= 0 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
-      exit(1); 
     }
-
+    fprintf(stderr," checking for certificates\n");
 
     /************************************************************/
     /*** Checking certificates                                ***/
@@ -100,13 +92,13 @@ int main(int argc, char **argv)
       if (strcmp(actual, expected) != 0) {
           fprintf(stderr, "Certificate entity mismatch: expected '%s', got '%s'\n", expected, actual);
           X509_free(cert);
-          SSL_free(ssl);  
+          SSL_free(ssl);
           close(sockfd);
           exit(1);
       }
     } else {
-      perror("No certificates.\n");
-      SSL_free(ssl); 
+      printf("No certificates.\n");
+      SSL_free(ssl);
       close(sockfd);
       exit(1);
     }
@@ -120,7 +112,7 @@ int main(int argc, char **argv)
     }
 
     //Note: Will need to write a message to the directory saying that I'm client with 2
-    //fprintf(stdout, "Before nread if branch\n");
+    fprintf(stdout, "Before nread if branch\n");
 
 
     if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
@@ -132,8 +124,8 @@ int main(int argc, char **argv)
       //handle reading from directory. will need a loop due to how directory puts stuff to client
         //fprintf(stdout, "In read from Directory branch\n");
         while(nread > 0){
-            snprintf(holder, MAX, "Read from server: %.90s\n", s);
-            fprintf(stdout, "%s", holder);
+            snprintf(holder, MAX, "Read from server: %s\n", s);
+            printf("%s", holder);
             nread = SSL_read(ssl, s, MAX);
         }
         close(sockfd);
@@ -144,10 +136,6 @@ int main(int argc, char **argv)
       close(sockfd);
       exit(0);
     }
-    SSL_free(ssl);  /*free it all up end of directory server calls*/ 
-    close(sockfd); 
-    SSL_CTX_free(ctx); 
-    exit(0); 
   } 
   else if (argc == 4) { //handles connection to server Usage: <address> <port> <chatroom name>
     if (sscanf(argv[1], "%s", argvValOne) < 0) {
@@ -195,17 +183,12 @@ int main(int argc, char **argv)
     /*** Establish SSL protocol and create encryption link    ***/
     /************************************************************/
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
-    BIO *bio = BIO_new_socket(sockfd, BIO_NOCLOSE); 
-    if(bio == NULL){
-      perror("client: BIO_new_socket failed"); 
-      exit(1); 
-    }
-    BIO_set_flags(bio, BIO_SOCK_NONBLOCK); 
-    SSL_set_bio(ssl, bio, bio); 
-
-    if (SSL_connect(ssl) == -1 ) {     /* perform the connection */
+    SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
+    int x;
+    if ((x = SSL_connect(ssl)) == -1 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
     }
+    fprintf(stderr, "Return value of SSL_accept: %d\n", x);
 
     /************************************************************/
     /*** Checking certificates                                ***/
@@ -225,10 +208,13 @@ int main(int argc, char **argv)
       }
     } else {
       printf("No certificates.\n");
-      SSL_free(ssl); 
+      SSL_free(ssl);
       close(sockfd);
       exit(1);
     }
+    
+    //fprintf(stdout, "Before for loop, testing rfd/wfd of ssl vs socket.\n");
+    //fprintf(stdout, "sockfd: %d. get_rfd: %d. get_wfd: %d.\n", sockfd, SSL_get_rfd(ssl), SSL_get_wfd(ssl));
 
 	  for(;;) {
 
@@ -237,22 +223,23 @@ int main(int argc, char **argv)
 		  FD_SET(sockfd, &readset);
 		  if (select(sockfd+1, &readset, NULL, NULL, NULL) > 0) 
 		  {
+        fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) {
-				  //fprintf(stdout, "In client read from terminal.\n");
+				  fprintf(stdout, "In client read from terminal.\n");
           if (1 == scanf(" %[^\n]s", s)) {
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {
-              //fprintf(stdout, "In userFlag 0 send branch\n");
-              snprintf(holder, MAX-2, "1%.97s", s);
+              fprintf(stdout, "In userFlag 0 send branch\n");
+              snprintf(holder, MAX, "1%s", s);
               SSL_write(ssl, holder, MAX);
               userFlag = 1;
             }
             else {
               //catches regular message
-              //fprintf(stdout, "In userFlag 2 send branch\n");
-              snprintf(holder, MAX, "2%.98s", s);
+              fprintf(stdout, "In userFlag 2 send branch\n");
+              snprintf(holder, MAX, "2%s", s);
               SSL_write(ssl, holder, MAX);
             }
 				  } 
@@ -262,39 +249,41 @@ int main(int argc, char **argv)
 		    }
 			  /* Check whether there's a message from the server to read */
 			  if (FD_ISSET(sockfd, &readset)) { 
-				  //fprintf(stdout, "In client read from server.\n");
+				  fprintf(stdout, "In client read from server.\n");
           if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
 					  fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
             if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
               fprintf(stdout, "Username already taken. Try again!\n");
-              //fprintf(stdout, "In userFlag 1 recieve branch\n");
+              fprintf(stdout, "In userFlag 1 recieve branch\n");
               userFlag = 0;
             }
+            else if (userFlag == 0){
+              fprintf(stdout, "Welcome to the chat program\n");
+            }
             else {
-              //fprintf(stdout, "In userFlag 2 recieve branch\n");
+              fprintf(stdout, "In userFlag 2 recieve branch\n");
               userFlag = 2;
               char printer[MAX];
-              snprintf(printer, MAX, "Read from server: %.90s\n", s);
-              fprintf(stdout,"%s", printer);
+              snprintf(printer, MAX, "Read from server: %s\n", s);
+              printf("%s", printer);
             }
 					
 				  }
           else {
             fprintf(stdout, "Server closed\n");
-            SSL_free(ssl); /*wrap up mem here */ 
+            SSL_free(ssl);
             close(sockfd);
             SSL_CTX_free(ctx);
             exit(0);
           }
 			  }
 		  }
-	  } /*all done lets get outta here */
-    SSL_free(ssl); 
-    close(sockfd);
+	  }
+    SSL_free(ssl);
+	  close(sockfd);
     SSL_CTX_free(ctx);
-    
     exit(0);
   }
   else {
@@ -302,6 +291,3 @@ int main(int argc, char **argv)
     exit(1);
   }
 }
-
-
-
