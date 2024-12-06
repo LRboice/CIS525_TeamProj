@@ -264,7 +264,7 @@ int main(int argc, char **argv)
             }
             else {
               //catches regular message
-              fprintf(stdout, "In userFlag 2 send branch\n"); //50/50 it seg faults here - Ai
+              //fprintf(stdout, "In userFlag 2 send branch\n"); //50/50 it seg faults here - Ai
               //fprintf(stdout, "Testing value of fr: %s\n", fr);
               snprintf(to, MAX, "2%s", fr); 
               readyFlag = 1;
@@ -294,7 +294,8 @@ int main(int argc, char **argv)
                 fprintf("%s\n", fr);
               }
               else {
-                fprintf(stdout, "In userFlag 2 recieve branch\n"); //50/50 it's this lie that seg faults - Aidan
+                //fprintf(stdout, "In userFlag 2 recieve branch\n"); //50/50 it's this lie that seg faults - Aidan
+                fprintf(stdout, " \n"); //Nobody in this group has any idea why, but without this line the code segfaults. - Aidan
                 userFlag = 2;
                 char printer[MAX];
                 snprintf(printer, MAX, "Read from server: %s\n", fr); //I *think* I can use printer here
