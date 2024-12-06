@@ -151,8 +151,10 @@ int main(int argc, char **argv)
   {
     SSL_CTX_use_certificate_file(ctx, "ksufootball.crt", SSL_FILETYPE_PEM); //not 100% on this, specifically
     SSL_CTX_use_PrivateKey_file(ctx, "ksufootball.key", SSL_FILETYPE_PEM); //the FILETYPE_PEM - Aidan
+    
     if (!SSL_CTX_check_private_key(ctx))
       fprintf(stderr, "Key & certificate don't match.");
+    //fprintf(stdout, "In ksufootball key after check private key passed\n");
   } 
   else if (strncmp("ksucis", argvValOne, MAX) == 0)
   {
@@ -265,7 +267,7 @@ int main(int argc, char **argv)
       struct connection* tempStruct = LIST_FIRST(&head);
       //fprintf(stdout, "Readset 4: %u\n", readset); 
       while(tempStruct != NULL) {
-        fprintf(stdout, "Top of while loop\n");
+        //fprintf(stdout, "Top of while loop\n");
         char holder[MAX];
         //fprintf(stdout, "Readset 5: %u\n", readset); 
         if(FD_ISSET(tempStruct->userSocket, &readset)){ 

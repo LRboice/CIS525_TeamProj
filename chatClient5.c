@@ -183,10 +183,7 @@ int main(int argc, char **argv)
 		  perror("client: can't connect to server");
 		  exit(1);
 	  }
-    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
-      perror("client: couldn't set new client socket to nonblocking");
-      exit(1);
-    }
+    
  
 
     /************************************************************/
@@ -197,13 +194,16 @@ int main(int argc, char **argv)
     int x;
     if ((x = SSL_connect(ssl)) == -1 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
+      exit(1);
     }
     fprintf(stdout, "Return value of SSL_accept: %d\n", x);
 
     /************************************************************/
     /*** Checking certificates                                ***/
     /************************************************************/
-    X509 *cert = SSL_get_peer_certificate(ssl);
+    X509 *cert = SSL_get_peer_certificate(ssl); //this is getting a null cert for some reason
+    if (cert != NULL)
+      fprintf(stdout, "Cert != NULL\n");
     if (cert != NULL && argv[3] != NULL) {
       char actual[MAX];
       X509_NAME *subject = X509_get_subject_name(cert);
@@ -220,6 +220,11 @@ int main(int argc, char **argv)
       printf("No certificates.\n");
       SSL_free(ssl);
       close(sockfd);
+      exit(1);
+    }
+    
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) != 0){
+      perror("client: couldn't set new client socket to nonblocking");
       exit(1);
     }
     
@@ -244,30 +249,119 @@ int main(int argc, char **argv)
           if ((n = read(0, " %[^\n]s", &(fr[MAX]) - froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan
             if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
-          else if (n == 0) {
+          else if (n > 0) { //was ==0, changed to > 0
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {
               fprintf(stdout, "In userFlag 0 send branch\n");
               snprintf(holder, MAX, "1%s", s);
-              SSL_write(ssl, holder, MAX);
+              //SSL_write(ssl, holder, MAX);
               userFlag = 1;
+              readyFlag = 1;
+              
             }
             else {
               //catches regular message
               fprintf(stdout, "In userFlag 2 send branch\n");
               snprintf(holder, MAX, "2%s", s);
-              SSL_write(ssl, holder, MAX);
+              //SSL_write(ssl, holder, MAX);
+              readyFlag = 1;
             }
 				  } 
           else {
 					  printf("Error reading or parsing user input\n");
 				  }
 		    }
+        if (FD_ISSET(sockfd, &readset)) { 
+				  //fprintf(stdout, "In client read from server.\n");
+          if ((nread = SSL_read(ssl, froptr, &(fr[MAX]) - froptr)) < 0) { 
+					  fprintf(stdout, "Error reading from server\n"); 
+				  } 
+          else if (nread > 0) {
+            froptr += nread;
+            if(froptr == &(fr[MAX])) {
+              froptr = fr;
+              
+              if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
+                fprintf(stdout, "Username already taken. Try again!\n");
+                fprintf(stdout, "In userFlag 1 recieve branch\n");
+                userFlag = 0;
+              }
+              else {
+                fprintf(stdout, "In userFlag 2 recieve branch\n");
+                userFlag = 2;
+                char printer[MAX];
+                snprintf(printer, MAX, "Read from server: %s\n", s);
+                printf("%s", printer);
+              }
+            }
+				  }
+          else {
+            fprintf(stdout, "Server closed\n");
+            SSL_free(ssl);
+            close(sockfd);
+            SSL_CTX_free(ctx);
+            exit(0);
+          }
+			  }
+        if(FD_ISSET(sockfd, &writeset)) {
+          int nwritten;
+          if ((nwritten = SSL_write(ssl, tooptr, &(to[MAX]) - tooptr)) < 0){
+            if (errno != EWOULDBLOCK) { perror("write error on socket"); }
+          }
+          else{
+            tooptr += nwritten;
+            if (&(to[MAX]) == tooptr){
+              readyFlag = 0;
+              froptr = fr;
+              tooptr = to;
+            }
+            else { fprintf(stderr, "%s%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten);
+          }
+          //fprintf(stdout, "In client write to server.\n");
+          /*size_t pending = tooptr - to; // pending bytes to write
+          if (pending > 0) {
+            int nwritten;
+            nwritten = SSL_write(ssl, to, MAX);
+            if(nwritten < 0) {
+              if(errno != EWOULDBLOCK) {
+                perror("server: write error on socket");
+                // exit ?
+              }
+            }
+            else if(nwritten > 0) {
+              if(nwritten >= pending) { // everything was written
+                tooptr = to; // reset pointer
+                memset(to, 0, MAX); // clear buffer
+                readyFlag = 0;
+              }
+              else {
+                int remaining = pending - nwritten;
+                for(int i = 0; i < remaining; i++) {
+                  to[i] = to[nwritten + i]; // move unwritten bytes to the front
+                }
+                tooptr = to + nwritten; // update pointer
+              }
+            }*/
+            readyFlag = 0;
+          }
+        }
+		  }
+      SSL_free(ssl);
+      close(sockfd);
+      SSL_CTX_free(ctx);
+      exit(0);
+	  }
+  }
+  else {
+    fprintf(stderr, "Usage: <IP> <port> <chatroom name>\n");
+    exit(1);
+  }
+}
 			  /* Check whether there's a message from the server to read */
-			  if (FD_ISSET(sockfd, &readset)) { 
+			  /*if (FD_ISSET(sockfd, &readset)) { 
 				  fprintf(stdout, "In client read from server.\n");
-          if ((nread = SSL_read(ssl, s, MAX)) < 0) { 
+          if ((nread = SSL_read(ssl, s, MAX)) < 0) { //this isn't nonblocking aaa 
 					  fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
@@ -275,9 +369,11 @@ int main(int argc, char **argv)
               fprintf(stdout, "Username already taken. Try again!\n");
               fprintf(stdout, "In userFlag 1 recieve branch\n");
               userFlag = 0;
+              readyFlag = 0;
             }
             else if (userFlag == 0){
               fprintf(stdout, "Welcome to the chat program\n");
+              readyFlag = 0;
             }
             else {
               fprintf(stdout, "In userFlag 2 recieve branch\n");
@@ -285,6 +381,7 @@ int main(int argc, char **argv)
               char printer[MAX];
               snprintf(printer, MAX, "Read from server: %s\n", s);
               printf("%s", printer);
+              readyFlag = 0;
             }
 					
 				  }
@@ -307,4 +404,4 @@ int main(int argc, char **argv)
     fprintf(stderr, "Usage: <IP> <port> <chatroom name>\n");
     exit(1);
   }
-}
+}*/
