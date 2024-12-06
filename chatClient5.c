@@ -34,7 +34,7 @@ int main(int argc, char **argv)
   /************************************************************/
  
 
-  //OpenSSL_add_all_algorithms();       /* Load cryptos, et.al. */ 
+  
   SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
   SSL_CTX_set_cipher_list(ctx, "HIGH:!aNULL:!MD5"); // allows only high-security ciphers, exlcuding ciphers without authentication and MD5
   SSL_load_error_strings();        /* Load/register error msg */
