@@ -188,14 +188,7 @@ int main(int argc, char **argv)
       while(tempStruct != NULL) {
        
         if(FD_ISSET(tempStruct->conSocket, &readset)){
-         
           int nameFlag = 1;
-
-
-       
-         
-
-
           if ((n = SSL_read(tempStruct->sslState, tempStruct->readptr, &(tempStruct->read[MAX]) - tempStruct->readptr)) < 0){
             if(errno!= EWOULDBLOCK){perror("read error on socket\n");}
 
@@ -236,15 +229,10 @@ int main(int argc, char **argv)
                     tempStruct->conIP = con_addr.sin_addr;
                     tempStruct->readyFlag = 1;
                     snprintf(tempStruct->write, MAX, "0%s", inet_ntoa(tempStruct->conIP));
-                   
-
-
-               
                   }
                   else{
                     snprintf(tempStruct->write, MAX, "1");
                     tempStruct->readyFlag = 1;
-                   
                   }
                   break;
                 case '2':
@@ -265,13 +253,9 @@ int main(int argc, char **argv)
                   else{
                     snprintf(tempStruct->write, MAX, "No servers are in the directory.");
                   }
-                 
-                 
-               
-                     
-                 
-                      default: snprintf(tempStruct->write, MAX, "Invalid request\n");
-                  }
+                  break;
+                default: snprintf(tempStruct->write, MAX, "Invalid request\n"); break;
+              }
                
              
             }
