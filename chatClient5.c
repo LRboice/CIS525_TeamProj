@@ -242,10 +242,10 @@ int main(int argc, char **argv)
       }
 		  if ((n = select(sockfd+1, &readset, &writeset, NULL, NULL)) > 0) 
 		  {
-        fprintf(stdout, "Top of select loop.\n");
+        //fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) { //(n = read(STDIN_FILENO, " %[^\n]s", &(fr[MAX]) - froptr)) < 0
-				  fprintf(stdout, "In client read from terminal.\n"); //changed read to scanf, removed the 0 at the beginning
+				  //fprintf(stdout, "In client read from terminal.\n"); //changed read to scanf, removed the 0 at the beginning
           if ((n = scanf(" %[^\n]s", froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan 
             if (errno != EWOULDBLOCK) { perror("read error on socket"); }//I think the error might be here
           }
@@ -253,7 +253,7 @@ int main(int argc, char **argv)
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {
-              fprintf(stdout, "In userFlag 0 send branch\n");
+              //fprintf(stdout, "In userFlag 0 send branch\n");
               snprintf(to, MAX, "1%s", fr); //these shouldn't put into holder, not sure if it's to or fr. Trying to
               //SSL_write(ssl, holder, MAX);
               userFlag = 1;
@@ -262,7 +262,7 @@ int main(int argc, char **argv)
             }
             else {
               //catches regular message
-              fprintf(stdout, "In userFlag 2 send branch\n");
+              //fprintf(stdout, "In userFlag 2 send branch\n");
               snprintf(to, MAX, "2%s", fr);
               //SSL_write(ssl, holder, MAX);
               readyFlag = 1;
@@ -274,8 +274,9 @@ int main(int argc, char **argv)
 		    }
         if (FD_ISSET(sockfd, &readset)) { 
 				  //fprintf(stdout, "In client read from server.\n");
-          if ((nread = SSL_read(ssl, froptr, &(fr[MAX]) - froptr)) < 0) { 
-					  fprintf(stdout, "Error reading from server\n"); 
+          if ((nread = SSL_read(ssl, froptr, &(fr[MAX]) - froptr)) < 0) {
+             if (errno != EWOULDBLOCK) { perror("read error on socket"); }
+					  //fprintf(stdout, "Error reading from server\n"); 
 				  } 
           else if (nread > 0) {
             froptr += nread;
@@ -350,12 +351,15 @@ int main(int argc, char **argv)
             readyFlag = 0;
           }
         }
+        //fprintf(stdout, "Bottom of select loop.\n");
 		  }
+      
+	  }
+     fprintf(stdout, "Right before ssl_free.\n");
       SSL_free(ssl);
       close(sockfd);
       SSL_CTX_free(ctx);
       exit(0);
-	  }
   }
   else {
     fprintf(stderr, "Usage: <IP> <port> <chatroom name>\n");
