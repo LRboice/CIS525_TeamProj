@@ -32,6 +32,8 @@ struct connection {
   char write[MAX];
   char read[MAX];
   char *writeptr, *readptr;
+  int serverListState = 0;
+  struct connection* serverListStruct; //I'm 99% sure you can recursively define stuff but not 100% - Aidan
 
 };
 //make the sockets non blocking
@@ -51,8 +53,9 @@ int main(int argc, char **argv)
   struct listhead head;
   int n;
 
-  int serverListState;
-  struct connection* serverListStruct;
+  //int serverListState = 0;
+  //struct connection* serverListStruct;
+  //struct connection* cliHolder;
 
   /************************************************************/
   /*** Initialize Server SSL state                          ***/
@@ -190,6 +193,7 @@ int main(int argc, char **argv)
         newConnection->sslState = ssl;
         newConnection->writeptr = newConnection->write;
         newConnection->readptr = newConnection->read;
+        newConnection->serverListState = 0;
 
 
 
@@ -292,24 +296,30 @@ int main(int argc, char **argv)
                   break;
                 case '2':
                   fprintf(stdout, "In printing to client.\n");
-                  snprintf(holder, MAX, "List of available servers:\n");
+                  //snprintf(holder, MAX, "List of available servers:\n");
+                  tempStruct->serverListState = 1;
+                  //note: Need to find some way to initialize it to the beginning of the list here and loop through them all
+                  //this is going to be absolute *hell.* But it's DND time so I can't work on it now. - Aidan 
+                  //tempStruct->serverListStruct = 
+
+
+                  //cliHolder = tempStruct;
                   // write(tempStruct->conSocket, holder, MAX);
-                  SSL_write(tempStruct->sslState, holder, MAX); //going to need to rework this to be nonblock
+                  //SSL_write(tempStruct->sslState, holder, MAX); //going to need to rework this to be nonblock
                   //if (nameFlag == 1){ 
                   //fprintf(stdout, "If list is empty: %d\n", LIST_EMPTY(&head));
                   /****************************************** non blocking */
-                //SSL_write(tempStruct->sslState, holder, MAX); 
+                  //SSL_write(tempStruct->sslState, holder, MAX); 
                   /*tempStruct->writeptr = tempStruct->write;
                   snprintf(tempStruct->writeptr,MAX,"%s",holder);
                   tempStruct->writeptr += strlen(holder);*/ //Tatenda's version is correct here, git merge is still jank-Aidan
-                  struct connection* sendStruct = LIST_FIRST(&head);
+                  /*struct connection* sendStruct = LIST_FIRST(&head);
                   //fprintf(stdout, "")
                     LIST_FOREACH(sendStruct, &head, servers){
                       if(sendStruct->servNameFlag == 1){
                         snprintf(holder, MAX, "%s", sendStruct->servName);
                         fprintf(stdout, "First server name: %s\n", sendStruct->servName);
                         // write(tempStruct->conSocket, holder, MAX);
-                        /****************************************** non blocking */
                         /*
                         NOTE: This is going to be a headache to make nonblocking
                         best idea is as follows: Have a state variable for which part
@@ -320,7 +330,7 @@ int main(int argc, char **argv)
 
 
                         //SSL_write(tempStruct->sslState, holder, MAX); 
-                        snprintf(tempStruct->writeptr,MAX,"%s",holder);
+                        /*snprintf(tempStruct->writeptr,MAX,"%s",holder);
                         tempStruct->writeptr += strlen(holder);
 
 
@@ -348,8 +358,9 @@ int main(int argc, char **argv)
 
 
                         // sendStruct->conIP, sendStruct->conPort, 
-                      }
-                  }
+                      }*/break;
+                      //default: snprintf(holder, MAX, "Invalid request\n"); //I don't think this line works - Aidan
+                  } 
                 //}
                 /*******************   */
                 // close(tempStruct->conSocket); 
@@ -358,7 +369,7 @@ int main(int argc, char **argv)
                 // size--;
                 // fprintf(stdout, "End of client print.\n");
                 // break;
-              default: snprintf(holder, MAX, "Invalid request\n");
+              
             }
             //fprintf(stdout, "End if switch statement\n");
             /*if (nameFlag == 1){
@@ -372,6 +383,9 @@ int main(int argc, char **argv)
           }
         }
         else if (FD_ISSET(tempStruct->conSocket, &writeset)){
+          //if (serverListState != 0){ //NOTE: This is fucking atrocious and would run into concurrency issues if two people type at the same time.
+            //I can think of no better way to get this done -- Aidan. 
+          //}
           int nwritten;
           if ((nwritten = SSL_write(tempStruct->sslState, tempStruct->writeptr, &(tempStruct->write[MAX]) - tempStruct->writeptr)) < 0) {
             if (errno != EWOULDBLOCK) { perror("write error on socket"); }
@@ -379,21 +393,34 @@ int main(int argc, char **argv)
           else {
               //fprintf(stdout, "in the write block for sock %d\n", tempStruct->userSocket);
               //fprintf(stdout, "nwritten = %d\n", nwritten);
-              tempStruct->writeptr += nwritten;
-              if (&(tempStruct->write[MAX]) == tempStruct->writeptr) {
-                tempStruct->readyFlag = 0;
-                tempStruct->readptr = tempStruct->read;
-                tempStruct->writeptr = tempStruct->write;
-                //fprintf(stdout, "This is after it should get reset\n");
+              
+              //else{ //I don't know if the serverListState and this branch can coexist. Don't care!
+                tempStruct->writeptr += nwritten;
+                if (&(tempStruct->write[MAX]) == tempStruct->writeptr) {
+                  tempStruct->readyFlag = 0;
+                  tempStruct->readptr = tempStruct->read;
+                  tempStruct->writeptr = tempStruct->write;
+                  if (tempStruct->serverListState != 0){ //NOTE: This is fucking atrocious and would run into concurrency issues if two people type at the same time.
+                     //I can think of no better way to get this done -- Aidan. 
+                      switch(tempStruct->serverListState){
+                        case '1':
+                          snprintf(tempStruct->writeptr, MAX, "Server IP: %s\n", inet_ntoa(tempStruct->serverListStruct->conIP));
+                          tempStruct->readyFlag = 1;
+                          tempStruct->serverListState = 2;
+                      }
               }
-              else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
+                  //fprintf(stdout, "This is after it should get reset\n");
+                }
+                else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
+              //}
+              
           }
         }
       
         tempStruct = LIST_NEXT(tempStruct, servers);
         //fprintf(stdout, "End of while loop\n");
       }
-    } //added this because I was missing one. Think its in the right spot. - Aidan 
+    //} //added this because I was missing one. Think its in the right spot. - Aidan 
 
 
       /*************************  */
