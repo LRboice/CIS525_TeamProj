@@ -32,8 +32,9 @@ struct connection {
   char write[MAX];
   char read[MAX];
   char *writeptr, *readptr;
-  int serverListState = 0;
+  int serverListState;
   struct connection* serverListStruct; //I'm 99% sure you can recursively define stuff but not 100% - Aidan
+  //int servPosition; I think I can get away with just wrapping this with servNameFlag
 
 };
 //make the sockets non blocking
@@ -52,6 +53,8 @@ int main(int argc, char **argv)
 	char				s[MAX];
   struct listhead head;
   int n;
+  
+  int servPosValue = 1;
 
   //int serverListState = 0;
   //struct connection* serverListStruct;
@@ -255,7 +258,7 @@ int main(int argc, char **argv)
                   struct connection* nameStruct = LIST_FIRST(&head);
                   //int connectedUsers = 0;
                   while (nameStruct != NULL){ //this could probably be a list foreach, but it currently works and I don't want to mess with it
-                    if (nameStruct->servNameFlag == 1){
+                    if (nameStruct->servNameFlag != 0){ //was == 1, changed to be compatable with future changes
                       if (strncmp(nameStruct->servName, &(tempStruct->read[1]), MAX) == 0){
                         nameFlag = 0;
                       }
@@ -265,10 +268,12 @@ int main(int argc, char **argv)
                   }
                   if (nameFlag == 1){
                     sscanf(&(tempStruct->read[1]), "%d %s", &tempStruct->conPort, tempStruct->servName); //think the & handles making it a pointer. Might want it to be snprintf
-                    tempStruct->servNameFlag = 1;
+                    tempStruct->servNameFlag = servPosValue;
+                    servPosValue++;
                     tempStruct->conIP = con_addr.sin_addr;
                     tempStruct->readyFlag = 1;
                     snprintf(tempStruct->write, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //this puts it in write, so I think that's all it needs to do
+                    //tempStruct->serv
                     //snprintf(holder, MAX, "0%s", inet_ntoa(tempStruct->conIP)); //need to figure out something to do with these lines
                     //// write(tempStruct->conSocket, holder, MAX); //99% sure I need a holder variable here
                     //SSL_write(tempStruct->sslState, holder, MAX);  //probably shouldn't write here - Aidan
@@ -298,6 +303,23 @@ int main(int argc, char **argv)
                   fprintf(stdout, "In printing to client.\n");
                   //snprintf(holder, MAX, "List of available servers:\n");
                   tempStruct->serverListState = 1;
+                  tempStruct->readyFlag = 1;
+                  struct connection* tempLoop = LIST_FIRST(&head);
+                  int flag = 1;
+                  while (tempLoop != NULL && flag == 1){
+                    if (tempLoop->servNameFlag == 1){
+                      flag = 0;
+                      tempStruct->serverListStruct = tempLoop;
+                    }
+                    tempLoop = LIST_NEXT(tempLoop, servers);
+                  }
+                  if (flag == 0){
+                    snprintf(tempStruct->write, MAX, "Server #%d", tempStruct->serverListStruct->servNameFlag);
+                  }
+                  else{
+                    snprintf(tempStruct->write, MAX, "No servers are in the directory.");
+                  }
+                  
                   //note: Need to find some way to initialize it to the beginning of the list here and loop through them all
                   //this is going to be absolute *hell.* But it's DND time so I can't work on it now. - Aidan 
                   //tempStruct->serverListStruct = 
@@ -386,6 +408,7 @@ int main(int argc, char **argv)
           //if (serverListState != 0){ //NOTE: This is fucking atrocious and would run into concurrency issues if two people type at the same time.
             //I can think of no better way to get this done -- Aidan. 
           //}
+          fprintf(stdout, "In FD_ISSET branch\n");
           int nwritten;
           if ((nwritten = SSL_write(tempStruct->sslState, tempStruct->writeptr, &(tempStruct->write[MAX]) - tempStruct->writeptr)) < 0) {
             if (errno != EWOULDBLOCK) { perror("write error on socket"); }
@@ -397,16 +420,56 @@ int main(int argc, char **argv)
               //else{ //I don't know if the serverListState and this branch can coexist. Don't care!
                 tempStruct->writeptr += nwritten;
                 if (&(tempStruct->write[MAX]) == tempStruct->writeptr) {
+                  fprintf(stdout, "In the full write branch.\n");
                   tempStruct->readyFlag = 0;
                   tempStruct->readptr = tempStruct->read;
                   tempStruct->writeptr = tempStruct->write;
                   if (tempStruct->serverListState != 0){ //NOTE: This is fucking atrocious and would run into concurrency issues if two people type at the same time.
-                     //I can think of no better way to get this done -- Aidan. 
+                     //I can think of no better way to get this done -- Aidan.
+                     fprintf(stdout, "In the if serverListState branch.\n"); 
                       switch(tempStruct->serverListState){
-                        case '1':
-                          snprintf(tempStruct->writeptr, MAX, "Server IP: %s\n", inet_ntoa(tempStruct->serverListStruct->conIP));
+                        case 1:
+                          snprintf(tempStruct->write, MAX, "Server IP: %s\n", inet_ntoa(tempStruct->serverListStruct->conIP));
                           tempStruct->readyFlag = 1;
                           tempStruct->serverListState = 2;
+                          fprintf(stdout, "In case 1\n");
+                          break;
+                        case 2:
+                          snprintf(tempStruct->write, MAX, "Server Port: %d\n", tempStruct->serverListStruct->conPort);
+                          tempStruct->readyFlag = 1;
+                          tempStruct->serverListState = 3;
+                          fprintf(stdout, "In case 2\n");
+                          break;
+                        case 3:
+                          snprintf(tempStruct->write, MAX, "Server Name: %s\n", tempStruct->serverListStruct->servName);
+                          tempStruct->readyFlag = 1;
+                          tempStruct->serverListState = 4;
+                          fprintf(stdout, "In case 3\n");
+                          break;
+                        case 4:
+                          fprintf(stdout, "In case 4\n");
+                          struct connection* servListLoop = LIST_FIRST(&head);
+                          int holder = tempStruct->serverListStruct->servNameFlag;
+                          while (servListLoop != NULL && holder == tempStruct->serverListStruct->servNameFlag) {
+                            if (servListLoop->servNameFlag > tempStruct->serverListStruct->servNameFlag){
+                              tempStruct->serverListStruct = servListLoop;
+                            }
+                            servListLoop = LIST_NEXT(tempStruct, servers);
+                          }
+                          if (holder == tempStruct->serverListStruct->servNameFlag){
+                            //this branch means you've looped through all the servers
+                            tempStruct->serverListState = 0;
+                          }
+                          else{
+                            snprintf(tempStruct->write, MAX, "Server #%d", tempStruct->serverListStruct->servNameFlag);
+                            tempStruct->readyFlag = 1;
+                            tempStruct->serverListState = 1;
+                          }
+                          break;
+                          default: fprintf(stdout, "Hit default\n"); break;
+                          
+
+                        //probably need a default/error check state
                       }
               }
                   //fprintf(stdout, "This is after it should get reset\n");

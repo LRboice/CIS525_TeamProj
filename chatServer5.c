@@ -286,8 +286,8 @@ int main(int argc, char **argv)
             struct connection* sendStruct = LIST_FIRST(&head);
             LIST_FOREACH(sendStruct, &head, clients){
               if (sendStruct->nicknameFlag == 1){
-                snprintf(writeLoop->to, MAX, "%s has logged out", tempStruct->nickname);
-                writeLoop->readyFlag = 1;
+                snprintf(sendStruct->to, MAX, "%s has logged out", tempStruct->nickname);
+                sendStruct->readyFlag = 1;
               }
             }
             free(tempStruct);
