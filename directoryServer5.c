@@ -51,6 +51,9 @@ int main(int argc, char **argv)
   struct listhead head;
   int n;
 
+  int serverListState;
+  struct connection* serverListStruct;
+
   /************************************************************/
   /*** Initialize Server SSL state                          ***/
   /************************************************************/
@@ -386,9 +389,11 @@ int main(int argc, char **argv)
               else { fprintf(stderr, "%s:%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten); }
           }
         }
+      
         tempStruct = LIST_NEXT(tempStruct, servers);
-      //fprintf(stdout, "End of while loop\n");
-      } 
+        //fprintf(stdout, "End of while loop\n");
+      }
+    } //added this because I was missing one. Think its in the right spot. - Aidan 
 
 
       /*************************  */
