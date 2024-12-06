@@ -188,7 +188,7 @@ int main(int argc, char **argv)
     if ((x = SSL_connect(ssl)) == -1 ) {     /* perform the connection */
       ERR_print_errors_fp(stderr);        /* report any errors */
     }
-    fprintf(stderr, "Return value of SSL_accept: %d\n", x);
+    fprintf(stdout, "Return value of SSL_accept: %d\n", x);
 
     /************************************************************/
     /*** Checking certificates                                ***/
