@@ -45,11 +45,7 @@ int main(int argc, char **argv)
     ERR_print_errors_fp(stderr);
     exit(2);
   }
-  /*SSL_CTX *ctx = SSL_CTX_new(method);            // Create new context after init method 
-  if(ctx == NULL) {
-    ERR_print_errors_fp(stderr);
-    exit(2);
-  }*/
+
 
 	
 	if (argc == 1) { //handles initial call to directory
@@ -188,25 +184,25 @@ int main(int argc, char **argv)
     /************************************************************/
     /*** Establish SSL protocol and create encryption link    ***/
     /************************************************************/
-    fprintf(stdout, "Beofre SSL_new\n");
+    //fprintf(stdout, "Beofre SSL_new\n");
     SSL *ssl = SSL_new(ctx); /* create new SSL connection state */
-    fprintf(stdout, "Beofre SSL_set_fd\n");
+    //fprintf(stdout, "Beofre SSL_set_fd\n");
     SSL_set_fd(ssl, sockfd);        /* attach the socket descriptor */
     int x;
-    fprintf(stdout, "Beofre SSL_connect\n");
+    //fprintf(stdout, "Beofre SSL_connect\n");
     if ((x = SSL_connect(ssl)) == -1 ) {     /* perform the connection */
       //ERR_print_errors_fp(stderr);        /* report any errors */
       fprintf(stdout, "Error: sSL_connect didnt like you\n");
       exit(1);
     }
-    fprintf(stdout, "Return value of SSL_accept: %d\n", x);
+    //fprintf(stdout, "Return value of SSL_accept: %d\n", x);
 
     /************************************************************/
     /*** Checking certificates                                ***/
     /************************************************************/
     X509 *cert = SSL_get_peer_certificate(ssl); //this is getting a null cert for some reason
-    if (cert != NULL)
-      fprintf(stdout, "Cert != NULL\n");
+    //if (cert != NULL)
+      //fprintf(stdout, "Cert != NULL\n");
     if (cert != NULL && argv[3] != NULL) {
       char actual[MAX];
       X509_NAME *subject = X509_get_subject_name(cert);
@@ -232,12 +228,6 @@ int main(int argc, char **argv)
       exit(1);
     }
     
-    //readyFlag = 1;
-    
-    
-    //fprintf(stdout, "Before for loop, testing rfd/wfd of ssl vs socket.\n");
-    //fprintf(stdout, "sockfd: %d. get_rfd: %d. get_wfd: %d.\n", sockfd, SSL_get_rfd(ssl), SSL_get_wfd(ssl));
-    
     fprintf(stdout, "Chat functionality:\n"); 
     fprintf(stdout, "Your first message will register your username.\n");
     fprintf(stdout, "Further messages will appear in chat as regular.\n");
@@ -254,7 +244,7 @@ int main(int argc, char **argv)
       }
 		  if ((n = select(sockfd+1, &readset, &writeset, NULL, NULL)) > 0) 
 		  {
-        fprintf(stdout, "Top of select loop.\n");
+        //fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
 			  if (FD_ISSET(STDIN_FILENO, &readset)) { //(n = read(STDIN_FILENO, " %[^\n]s", &(fr[MAX]) - froptr)) < 0
 				  //fprintf(stdout, "In client read from terminal.\n"); //changed read to scanf, removed the 0 at the beginning
@@ -265,20 +255,18 @@ int main(int argc, char **argv)
 					  /* Send the user's message to the server */ 
             //handles case of 1st message to register username
              if (userFlag == 0) {
-              fprintf(stdout, "Testing value of fr: %s\n", fr);
+              //fprintf(stdout, "Testing value of fr: %s\n", fr);
               //fprintf(stdout, "In userFlag 0 send branch\n");
               snprintf(to, MAX, "1%s", fr); //these shouldn't put into holder, not sure if it's to or fr. Trying to
-              //SSL_write(ssl, holder, MAX);
               userFlag = 1;
               readyFlag = 1; //this doesn't incrememnt fropointer
               
             }
             else {
               //catches regular message
-              fprintf(stdout, "In userFlag 2 send branch\n");
+              fprintf(stdout, "In userFlag 2 send branch\n"); //50/50 it seg faults here - Ai
               //fprintf(stdout, "Testing value of fr: %s\n", fr);
               snprintf(to, MAX, "2%s", fr); 
-              //SSL_write(ssl, holder, MAX);
               readyFlag = 1;
             }
 				  } 
@@ -287,7 +275,7 @@ int main(int argc, char **argv)
 				  }
 		    }
         if (FD_ISSET(sockfd, &readset)) { 
-				  fprintf(stdout, "In client read from server.\n");
+				  //fprintf(stdout, "In client read from server.\n");
           if ((nread = SSL_read(ssl, froptr, &(fr[MAX]) - froptr)) < 0) {
              if (errno != EWOULDBLOCK) { perror("read error on socket"); }
 					  //fprintf(stdout, "Error reading from server\n"); 
@@ -306,7 +294,7 @@ int main(int argc, char **argv)
                 fprintf("%s\n", fr);
               }
               else {
-                fprintf(stdout, "In userFlag 2 recieve branch\n");
+                fprintf(stdout, "In userFlag 2 recieve branch\n"); //50/50 it's this lie that seg faults - Aidan
                 userFlag = 2;
                 char printer[MAX];
                 snprintf(printer, MAX, "Read from server: %s\n", fr); //I *think* I can use printer here
@@ -338,31 +326,6 @@ int main(int argc, char **argv)
             }
             else { fprintf(stderr, "%s%d: wrote %d bytes \n", __FILE__, __LINE__, nwritten);
           }
-          //fprintf(stdout, "In client write to server.\n");
-          /*size_t pending = tooptr - to; // pending bytes to write
-          if (pending > 0) {
-            int nwritten;
-            nwritten = SSL_write(ssl, to, MAX);
-            if(nwritten < 0) {
-              if(errno != EWOULDBLOCK) {
-                perror("server: write error on socket");
-                // exit ?
-              }
-            }
-            else if(nwritten > 0) {
-              if(nwritten >= pending) { // everything was written
-                tooptr = to; // reset pointer
-                memset(to, 0, MAX); // clear buffer
-                readyFlag = 0;
-              }
-              else {
-                int remaining = pending - nwritten;
-                for(int i = 0; i < remaining; i++) {
-                  to[i] = to[nwritten + i]; // move unwritten bytes to the front
-                }
-                tooptr = to + nwritten; // update pointer
-              }
-            }*/
             readyFlag = 0;
           }
         }
@@ -381,50 +344,3 @@ int main(int argc, char **argv)
     exit(1);
   }
 }
-			  /* Check whether there's a message from the server to read */
-			  /*if (FD_ISSET(sockfd, &readset)) { 
-				  fprintf(stdout, "In client read from server.\n");
-          if ((nread = SSL_read(ssl, s, MAX)) < 0) { //this isn't nonblocking aaa 
-					  fprintf(stdout, "Error reading from server\n"); 
-				  } 
-          else if (nread > 0) {
-            if(userFlag == 1 && strncmp(&s[0], "1", MAX) == 0){
-              fprintf(stdout, "Username already taken. Try again!\n");
-              fprintf(stdout, "In userFlag 1 recieve branch\n");
-              userFlag = 0;
-              readyFlag = 0;
-            }
-            else if (userFlag == 0){
-              fprintf(stdout, "Welcome to the chat program\n");
-              readyFlag = 0;
-            }
-            else {
-              fprintf(stdout, "In userFlag 2 recieve branch\n");
-              userFlag = 2;
-              char printer[MAX];
-              snprintf(printer, MAX, "Read from server: %s\n", s);
-              printf("%s", printer);
-              readyFlag = 0;
-            }
-					
-				  }
-          else {
-            fprintf(stdout, "Server closed\n");
-            SSL_free(ssl);
-            close(sockfd);
-            SSL_CTX_free(ctx);
-            exit(0);
-          }
-			  }
-		  }
-	  }
-    SSL_free(ssl);
-	  close(sockfd);
-    SSL_CTX_free(ctx);
-    exit(0);
-  }
-  else {
-    fprintf(stderr, "Usage: <IP> <port> <chatroom name>\n");
-    exit(1);
-  }
-}*/
