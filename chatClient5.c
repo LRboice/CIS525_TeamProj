@@ -158,7 +158,7 @@ int main(int argc, char **argv)
     /* Set up the address of the server to be contacted. */
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
 	  serv_addr.sin_family			= AF_INET;
-	  serv_addr.sin_addr.s_addr	= inet_addr(argvValOne); //NOTE: these are not error checked. Format is address then port. Might need to do conversions on the address too
+	  serv_addr.sin_addr.s_addr	= inet_addr(argvValOne); 
 	  serv_addr.sin_port			= htons(argvValTwo); 
  
 
@@ -256,9 +256,9 @@ int main(int argc, char **argv)
              if (userFlag == 0) {
               //fprintf(stdout, "Testing value of fr: %s\n", fr);
               //fprintf(stdout, "In userFlag 0 send branch\n");
-              snprintf(to, MAX, "1%s", fr); //these shouldn't put into holder, not sure if it's to or fr. Trying to
+              snprintf(to, MAX, "1%s", fr); 
               userFlag = 1;
-              readyFlag = 1; //this doesn't incrememnt fropointer
+              readyFlag = 1; 
               
             }
             else {
