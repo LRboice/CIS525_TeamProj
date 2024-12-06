@@ -122,9 +122,8 @@ int main(int argc, char **argv)
       exit(1);
 	  } 
     else if (nread > 0) {
-      //handle reading from directory. will need a loop due to how directory puts stuff to client
         //fprintf(stdout, "In read from Directory branch\n");
-        while(nread > 0 && strncmp(&s[0], "1", MAX) != 0){ //might need to do string comparison here //strncmp(&s[0], "1", MAX) == 0 //s[0] != 1
+        while(nread > 0 && strncmp(&s[0], "1", MAX) != 0){ 
             snprintf(holder, MAX, "Read from directory: %s\n", s);
             printf("%s", holder);
             nread = SSL_read(ssl, s, MAX);
@@ -160,7 +159,7 @@ int main(int argc, char **argv)
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
 	  serv_addr.sin_family			= AF_INET;
 	  serv_addr.sin_addr.s_addr	= inet_addr(argvValOne); //NOTE: these are not error checked. Format is address then port. Might need to do conversions on the address too
-	  serv_addr.sin_port			= htons(argvValTwo); //*definitely* need to convert address
+	  serv_addr.sin_port			= htons(argvValTwo); 
  
 
     
@@ -192,7 +191,7 @@ int main(int argc, char **argv)
     //fprintf(stdout, "Beofre SSL_connect\n");
     if ((x = SSL_connect(ssl)) == -1 ) {     /* perform the connection */
       //ERR_print_errors_fp(stderr);        /* report any errors */
-      fprintf(stdout, "Error: sSL_connect didnt like you\n");
+      fprintf(stdout, "Error: SSL_connect didnt like you\n");
       exit(1);
     }
     //fprintf(stdout, "Return value of SSL_accept: %d\n", x);
@@ -200,7 +199,7 @@ int main(int argc, char **argv)
     /************************************************************/
     /*** Checking certificates                                ***/
     /************************************************************/
-    X509 *cert = SSL_get_peer_certificate(ssl); //this is getting a null cert for some reason
+    X509 *cert = SSL_get_peer_certificate(ssl);
     //if (cert != NULL)
       //fprintf(stdout, "Cert != NULL\n");
     if (cert != NULL && argv[3] != NULL) {
@@ -246,10 +245,10 @@ int main(int argc, char **argv)
 		  {
         //fprintf(stdout, "Top of select loop.\n");
 			  /* Check whether there's user input to read */
-			  if (FD_ISSET(STDIN_FILENO, &readset)) { //(n = read(STDIN_FILENO, " %[^\n]s", &(fr[MAX]) - froptr)) < 0
-				  //fprintf(stdout, "In client read from terminal.\n"); //changed read to scanf, removed the 0 at the beginning
-          if ((n = scanf(" %[^\n]s", froptr)) < 0){ //this line feels *incredibly* wrong. Might not be able to do format string here - Aidan  //changed from 
-            if (errno != EWOULDBLOCK) { perror("read error on socket"); }//I think the error might be here
+			  if (FD_ISSET(STDIN_FILENO, &readset)) { 
+				  //fprintf(stdout, "In client read from terminal.\n"); 
+          if ((n = scanf(" %[^\n]s", froptr)) < 0){ 
+            if (errno != EWOULDBLOCK) { perror("read error on socket"); }
           }
           else if (n > 0) { //was ==0, changed to > 0
 					  /* Send the user's message to the server */ 
